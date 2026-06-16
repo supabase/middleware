@@ -3,6 +3,20 @@ import type { BaseContext } from './runtime.js'
 import { bufferRequest, isContext, seedContext } from './runtime.js'
 
 /**
+ * Warn (once per process) that a host passed a third `fetch` argument — the
+ * Workers `ExecutionContext` (`waitUntil` / `passThroughOnException`) — which is
+ * not honored. The request still proceeds; only the execution context is ignored.
+ */
+let warnedThirdArg = false
+function warnUnhonoredThirdArg(): void {
+  if (warnedThirdArg) return
+  warnedThirdArg = true
+  console.warn(
+    'web-middleware: a third fetch argument (the Workers ExecutionContext / waitUntil) was supplied but is not honored; it will be ignored. Supported entry signatures are (request) and (request, env).',
+  )
+}
+
+/**
  * Defines a middleware.
  *
  * A middleware runs against an inbound `Request` and the upstream context. It
@@ -96,13 +110,9 @@ export function defineMiddleware<
         } else {
           // Entry call. A third positional argument is the host's execution
           // context (the Cloudflare Workers `ExecutionContext` — `waitUntil` /
-          // `passThroughOnException`). We don't implement it; rather than
-          // silently dropping it, fail loudly. The Deno target never passes one.
-          if (rest.length > 0) {
-            throw new Error(
-              'web-middleware: a third fetch argument (the Workers ExecutionContext / waitUntil) was supplied, which is not implemented. Supported entry signatures are (request) and (request, env).',
-            )
-          }
+          // `passThroughOnException`). We don't honor it; warn once rather than
+          // silently dropping it, and continue (the Deno target never passes one).
+          if (rest.length > 0) warnUnhonoredThirdArg()
           workingReq = req.body ? bufferRequest(req) : req
           upstream = seedContext([maybeCtx])
         }

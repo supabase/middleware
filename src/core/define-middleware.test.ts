@@ -71,19 +71,25 @@ describe('defineMiddleware', () => {
     expect(await res.json()).toEqual({ keys: ['_runtime', 'greeting'] })
   })
 
-  it('throws "not implemented" when a third fetch argument (exec context) is passed', async () => {
-    const fetchHandler = withGreeting(undefined, async () =>
-      Response.json({ ok: true }),
-    )
+  it('warns (does not throw) and ignores a third fetch argument (exec context)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const fetchHandler = withGreeting(undefined, async (_req, ctx) =>
+        Response.json({ keys: Object.keys(ctx) }),
+      )
 
-    // Simulate Cloudflare Workers calling fetch(req, env, executionContext).
-    await expect(
-      (fetchHandler as (req: Request, ...a: unknown[]) => Promise<Response>)(
-        new Request('http://localhost/'),
-        { SECRET: 's' },
-        { waitUntil() {} },
-      ),
-    ).rejects.toThrow(/not implemented/i)
+      // Simulate Cloudflare Workers calling fetch(req, env, executionContext).
+      const res = await (
+        fetchHandler as (req: Request, ...a: unknown[]) => Promise<Response>
+      )(new Request('http://localhost/'), { SECRET: 's' }, { waitUntil() {} })
+
+      // Proceeds normally; the env (arg 2) still does not leak into ctx, and the
+      // execution context (arg 3) is ignored rather than throwing.
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ keys: ['_runtime', 'greeting'] })
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   it('req body is readable from multiple layers (buffered request)', async () => {
