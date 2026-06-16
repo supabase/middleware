@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest'
 import * as root from './index.js'
 import * as core from './core/index.js'
 import * as featureFlag from './middleware/feature-flag/index.js'
-import * as postgres from './middleware/postgres/index.js'
 
 /**
  * Guards the public *value* exports of every entry point. Type-only exports are
@@ -31,6 +30,5 @@ describe('public API surface', () => {
 
   it('middleware subpaths', () => {
     expect(typeof featureFlag.withFeatureFlag).toBe('function')
-    expect(typeof postgres.withPostgres).toBe('function')
   })
 })

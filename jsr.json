@@ -3,8 +3,7 @@
   "version": "0.1.0",
   "exports": {
     ".": "./src/index.ts",
-    "./feature-flag": "./src/middleware/feature-flag/index.ts",
-    "./postgres": "./src/middleware/postgres/index.ts"
+    "./feature-flag": "./src/middleware/feature-flag/index.ts"
   },
   "publish": {
     "include": ["src/**/*.ts", "README.md", "LICENSE"],

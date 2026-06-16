@@ -87,17 +87,20 @@ reachable), and `waitUntil` is simply not honored. (`define-middleware.ts`.)
 ## 7. "Runs unchanged across every runtime" was overstated — 🟩 resolved (via #5)
 
 With #5 (warn instead of throw), Workers is no longer blocked, so the cross-runtime
-claim holds again. Remaining caveat is honest and already documented: the `postgres`
-subpath is Node/Deno-only (`pg`), which is a per-subpath note, not a core limitation.
+claim holds. With the `postgres` middleware also extracted (below), the core package
+ships only Fetch-standard code with no `pg` — it is now **fully edge-portable**, no
+per-subpath runtime caveats.
 
 ---
 
-## 2. Prerequisite trust model is implicit — 🟦 by design
+## 2. Prerequisite trust model is implicit — 🟦 by design (moved with postgres)
 
-`withPostgres` trusts any upstream that structurally provides `jwtClaims`; there's no
-guarantee they came from real verification. **Disposition (accepted): all middleware
-being trusted is reasonable.** Worth one line in the security docs ("RLS scoping
-trusts the `jwtClaims` provider"), but no code change.
+A `jwtClaims`-consuming middleware trusts any upstream that structurally provides the
+key; there's no guarantee the claims came from real verification. **Disposition
+(accepted): all middleware being trusted is reasonable.** This now applies to
+`@supabase/server/postgres` (where `withPostgres` moved) and any third-party
+`In: { jwtClaims }` middleware — a one-line security note in that package, no core
+change.
 
 ---
 
@@ -108,5 +111,15 @@ The bundled `/auth` (`withAuth`, HS256-only) and `/auth-hook` middleware have be
 asymmetric/JWKS), key fetching, anon-vs-error semantics, and Supabase Auth Hooks — is
 Supabase-specific and is owned by `withSupabase` (the `supabase/server` migration,
 which already does this with `jose`). web-middleware stays the auth-agnostic substrate:
-`withPostgres` still declares `In: { jwtClaims }`, and the consumer's auth middleware
-(e.g. `withSupabase`) contributes it.
+a downstream DB middleware (now `@supabase/server/postgres` — see below) declares
+`In: { jwtClaims }`, and the consumer's auth middleware (e.g. `withSupabase`)
+contributes it.
+
+## 8. `postgres` middleware extracted — 🟩 resolved (moved out)
+
+`withPostgres` (raw `pg`, RLS-scoped) was Supabase-specific and Node/Deno-only — the
+last non-generic thing in the substrate. It has been **removed from web-middleware and
+moved to `@supabase/server/postgres`** (built on web-middleware's `defineMiddleware`,
+isolated subpath with `pg` as an optional peer). web-middleware now ships only the
+generic substrate: `defineMiddleware`, `withCatch`, `withResponse`, the `Runtime`
+facet, and `feature-flag` (the worked example).

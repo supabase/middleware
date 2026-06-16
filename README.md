@@ -29,7 +29,6 @@ pnpm add @supabase/web-middleware
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `@supabase/web-middleware`              | The `defineMiddleware` primitive, `withCatch` / `withResponse` + `Runtime` / `FetchHandler` / `Middleware` / `Conflict` types. |
 | `@supabase/web-middleware/feature-flag` | Provider-agnostic feature flag — admit or short-circuit per request.                                                           |
-| `@supabase/web-middleware/postgres`     | RLS-scoped (and optional RLS-bypassing) Postgres client. Node/Deno.                                                            |
 
 ## How it composes
 
@@ -59,7 +58,7 @@ export default {
 Two type-level guarantees, with no runtime cost:
 
 - **Collision detection.** Two middleware contributing the same key fail to compile (under the `satisfies FetchHandler` anchor).
-- **Prerequisite enforcement.** A middleware can declare upstream keys it needs (e.g. `withPostgres` needs `jwtClaims`). Composing it without that upstream is a type error — it can't be a bare entry. Prerequisite-declared keys type with no anchor required.
+- **Prerequisite enforcement.** A middleware can declare upstream keys it needs (e.g. a database middleware that needs `jwtClaims` from an upstream auth middleware). Composing it without that upstream is a type error — it can't be a bare entry. Prerequisite-declared keys type with no anchor required.
 
 ### Runtime & environment
 
@@ -89,7 +88,7 @@ Both are transparent to the call signature, so the result stays a `fetch` entry 
 
 - [Composition primitives](./src/core/README.md) — `ctx` shape, conflict & prerequisite enforcement, composition rules.
 - [Authoring guide](./src/middleware/README.md) — write your own middleware with `defineMiddleware`.
-- Per-middleware: [feature-flag](./src/middleware/feature-flag/README.md) · [postgres](./src/middleware/postgres/README.md)
+- Per-middleware: [feature-flag](./src/middleware/feature-flag/README.md) — the worked example.
 
 ## License
 

@@ -29,10 +29,10 @@ export default {
 
 Inside a wrapped handler, `ctx` is a flat intersection — the framework seeds the one reserved `_runtime` facet, and each middleware contributes a typed key:
 
-| Key                                                  | Set by                              | Mutability              |
-| ---------------------------------------------------- | ----------------------------------- | ----------------------- |
-| `ctx._runtime` (`name`, `getEnv`)                    | seeded at the entry call (reserved) | read-only               |
-| `ctx.<key>` (e.g. `ctx.featureFlag`, `ctx.postgres`) | the corresponding middleware        | read-only by convention |
+| Key                                  | Set by                              | Mutability              |
+| ------------------------------------ | ----------------------------------- | ----------------------- |
+| `ctx._runtime` (`name`, `getEnv`)    | seeded at the entry call (reserved) | read-only               |
+| `ctx.<key>` (e.g. `ctx.featureFlag`) | the corresponding middleware        | read-only by convention |
 
 > **Reading the body.** Read it off **`req`** as usual — `req.text()` / `req.json()` /
 > `req.arrayBuffer()` / `req.bytes()`. The framework hands every layer a buffered

@@ -4,10 +4,9 @@
  *
  * The package root exports the {@link defineMiddleware} primitive, the
  * `withCatch` / `withResponse` wrappers, and supporting types. The built-in
- * middleware live behind subpaths:
+ * `feature-flag` middleware lives behind a subpath:
  *
  * - `@supabase/web-middleware/feature-flag`
- * - `@supabase/web-middleware/postgres`
  *
  * @packageDocumentation
  */
@@ -26,4 +25,3 @@ export type {
   RuntimeName,
 } from './core/runtime.js'
 export type { Conflict } from './core/types.js'
-export type { JWTClaims } from './types.js'
