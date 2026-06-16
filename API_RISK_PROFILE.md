@@ -556,14 +556,22 @@ ceremony); it turns on (a) the innermost handler seeing _every_ upstream key, an
 | **R7** | ✅ **resolved** (core part) | Core now exports `NoConflict` / `IsAny`; `auth-hook` imports the shared `NoConflict` instead of hand-copying it (the maintenance hazard). `Contribution`-inference and the `postgres` per-config cast are deferred as ⚪ papercuts. See [docs/solutions/R7-authoring-drift.md](docs/solutions/R7-authoring-drift.md).                                                                                                 | `pnpm typecheck` + `pnpm test` ✅ against the shared helper.                                                                                          |
 | **R9** | ✅ **resolved**             | Shared `RejectConfig` + `rejection()` in core; `feature-flag` / `auth-hook` configs `extends RejectConfig` and build short-circuits through it (one definition, consistent surface). `ctx` name kept by design (documented). See [docs/solutions/R9-reject-convention.md](docs/solutions/R9-reject-convention.md).                                                                                                    | `pnpm test` ✅ (existing reject tests cover the shared helper).                                                                                       |
 
-### Remaining (not addressed by this change)
+### Remaining (deferred papercuts — not defects)
 
-- **Anchor ergonomics.** Ambient accumulation + collision detection require a
-  `satisfies FetchHandler` annotation; omitting it silently degrades _types_ (runtime
-  stays correct). Prerequisite-based typing needs no annotation. (Addressed as a
-  documented decision — see the anchor-ergonomics solution doc.)
 - **R7 (papercuts).** `Contribution` still isn't inferred from `run`, and `postgres`
   keeps an isolated per-config `as unknown` bridge. Deferred, not defects.
+
+### Decisions (deliberate, documented)
+
+- **Anchor ergonomics.** Ambient accumulation + collision detection require a
+  `satisfies FetchHandler` annotation (proven necessary by 5 experiments — a `Base`
+  default and a trailing finalize can't substitute). Made low-friction by re-exporting
+  `FetchHandler` from every subpath (one import line); omitting it degrades only
+  _types_, never runtime. See
+  [docs/solutions/anchor-ergonomics.md](docs/solutions/anchor-ergonomics.md).
+- **`ctx` naming.** Kept `ctx` (not `state`/`data`) — renaming is a breaking,
+  cosmetic-only change; the package never surfaces a competing `ctx`. Reserved
+  `ctx.runtime` / `ctx.body` documented. See R9 solution doc.
 
 ### Verification summary
 

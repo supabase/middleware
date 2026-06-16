@@ -4,6 +4,7 @@
  * @packageDocumentation
  */
 
+export type { FetchHandler } from '../../core/index.js'
 export { withAuthHook } from './with-auth-hook.js'
 export type {
   AuthHookContribution,

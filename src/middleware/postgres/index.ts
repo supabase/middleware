@@ -6,6 +6,7 @@
  * @packageDocumentation
  */
 
+export type { FetchHandler } from '../../core/index.js'
 export { withPostgres } from './with-postgres.js'
 export type { PostgresConfig, Postgres } from './with-postgres.js'
 export type { Db } from './db.js'

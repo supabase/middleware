@@ -4,6 +4,7 @@
  * @packageDocumentation
  */
 
+export type { FetchHandler } from '../../core/index.js'
 export { withAuth } from './with-auth.js'
 export type { WithAuthConfig } from './with-auth.js'
 export { verifySupabaseJwt } from './verify-jwt.js'

@@ -1,6 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { withFeatureFlag } from './with-feature-flag.js'
+// The subpath re-exports `FetchHandler`, so the `satisfies` anchor is a single
+// import line. This assignment is tsc-verified (the `typecheck` script).
+import { withFeatureFlag, type FetchHandler } from './index.js'
+
+const _anchored = withFeatureFlag(
+  { name: 'beta', evaluate: () => true },
+  async (_req, ctx) => Response.json({ name: ctx.featureFlag.name }),
+) satisfies FetchHandler
+void _anchored
 
 const innerOk = async () => Response.json({ ok: true })
 
