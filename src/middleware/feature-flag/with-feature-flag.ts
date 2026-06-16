@@ -33,15 +33,15 @@ export interface WithFeatureFlagConfig {
   ) => Promise<boolean | FeatureFlagVerdict> | boolean | FeatureFlagVerdict
 
   /**
-   * HTTP status to use when the flag rejects. Default is 404 — "this feature
-   * doesn't exist for you yet" — which is a softer reveal than 403 and avoids
-   * tipping off attackers about the existence of gated functionality.
+   * HTTP status when the flag rejects. Default is 404 — "this feature doesn't
+   * exist for you yet" — a softer reveal than 403 that avoids tipping off
+   * attackers about the existence of gated functionality.
    *
    * @defaultValue `404`
    */
   rejectStatus?: number
 
-  /** Body to use when the flag rejects. @defaultValue `{ error: 'feature_disabled', flag: <name> }` */
+  /** Body when the flag rejects. @defaultValue `{ error: 'feature_disabled', flag: <name> }` */
   rejectBody?: unknown
 }
 
@@ -130,7 +130,7 @@ export const withFeatureFlag = defineMiddleware<
       typeof result === 'boolean' ? { enabled: result } : result
 
     if (!verdict.enabled) {
-      // Short-circuit: the inner handler is never invoked.
+      // Short-circuit: return a Response, the inner handler is never invoked.
       return Response.json(
         config.rejectBody ?? { error: 'feature_disabled', flag: config.name },
         { status: config.rejectStatus ?? 404 },

@@ -56,8 +56,8 @@ The runtime picks `result[key]` off the contribution object and ignores any othe
 
 1. **One key per middleware.** A middleware that wants multiple slots is doing too much — split it.
 2. **No response shaping.** Middleware don't observe or wrap the inner handler's response. Anything response-shaped — rate-limit headers, CORS, response envelopes — is the handler's (or an outer wrapper's) job. Keeps each surface small and the response shape under one owner.
-3. **Declare prerequisites in `In`.** If your middleware needs `ctx.jwtClaims`, set `In = { jwtClaims: JWTClaims | null }`. Standalone use then fails to compile — a real error, not a runtime surprise.
-4. **Pick a unique key.** If two middleware contribute the same key, composition fails with a type error at the offending call site (the inner returns the `Conflict<Key>` sentinel string). For middleware that may be applied multiple times, accept a `key` override in config.
+3. **Declare prerequisites in `In`.** If your middleware needs an upstream key — say `ctx.jwtClaims` from an auth middleware — set `In = { jwtClaims: { sub: string } | null }`. Standalone use then fails to compile — a real error, not a runtime surprise.
+4. **Pick a unique key.** If two middleware contribute the same key, composition fails to typecheck (the inner `ctx` resolves to the `Conflict<Key>` sentinel) under the `satisfies FetchHandler` anchor. To apply the same middleware more than once on purpose, callers use the built-in `.as(newKey)` re-key — `withFeatureFlag.as('beta')(config, handler)` — so you don't need a key-override in config.
 
 ## Directory layout
 

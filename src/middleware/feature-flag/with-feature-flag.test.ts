@@ -1,6 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { withFeatureFlag } from './with-feature-flag.js'
+// The subpath re-exports `FetchHandler`, so the `satisfies` anchor is a single
+// import line. This assignment is tsc-verified (the `typecheck` script).
+import { withFeatureFlag, type FetchHandler } from './index.js'
+
+const _anchored = withFeatureFlag(
+  { name: 'beta', evaluate: () => true },
+  async (_req, ctx) => Response.json({ name: ctx.featureFlag.name }),
+) satisfies FetchHandler
+void _anchored
 
 const innerOk = async () => Response.json({ ok: true })
 
@@ -110,5 +118,17 @@ describe('withFeatureFlag', () => {
     const res = await handler(new Request('http://localhost/'))
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ variant: 'a' })
+  })
+
+  it('self-seeds ctx._runtime when invoked as a bare fetch entry', async () => {
+    const handler = withFeatureFlag(
+      { name: 'beta', evaluate: () => true },
+      async (_req, ctx) => Response.json({ host: ctx._runtime.name }),
+    )
+
+    // Called directly, the way a runtime invokes `export default { fetch }`.
+    const res = await handler(new Request('http://localhost/'))
+    // Detected at module load; this suite runs on Node.
+    expect(await res.json()).toEqual({ host: 'node' })
   })
 })

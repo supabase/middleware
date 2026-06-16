@@ -30,16 +30,6 @@
       "import": "./dist/middleware/feature-flag/index.mjs",
       "require": "./dist/middleware/feature-flag/index.cjs"
     },
-    "./auth-hook": {
-      "types": "./dist/middleware/auth-hook/index.d.mts",
-      "import": "./dist/middleware/auth-hook/index.mjs",
-      "require": "./dist/middleware/auth-hook/index.cjs"
-    },
-    "./postgres": {
-      "types": "./dist/middleware/postgres/index.d.mts",
-      "import": "./dist/middleware/postgres/index.mjs",
-      "require": "./dist/middleware/postgres/index.cjs"
-    },
     "./package.json": "./package.json"
   },
   "main": "./dist/index.cjs",
@@ -62,18 +52,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
-  "peerDependencies": {
-    "pg": "^8.0.0"
-  },
-  "peerDependenciesMeta": {
-    "pg": {
-      "optional": true
-    }
-  },
   "devDependencies": {
-    "@types/pg": "^8.20.0",
     "eslint": "^10.0.2",
-    "pg": "^8.21.0",
     "prettier": "3.8.1",
     "tsdown": "^0.20.3",
     "typescript": "^5.9.3",
