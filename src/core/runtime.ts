@@ -70,8 +70,8 @@ export type Handler<Ctx extends BaseContext = BaseContext> = (
  */
 export type FetchHandler = (req: Request, ctx?: BaseContext) => Promise<Response>
 
-/** Best-effort host detection. Deno is checked first because it also defines `navigator`. */
-function detectRuntimeName(): RuntimeName {
+/** Best-effort host detection. Deno is checked first because it also defines `navigator`. Exported for testing. */
+export function detectRuntimeName(): RuntimeName {
   const g = globalThis as Record<string, unknown>
   if (typeof g.Deno !== 'undefined') return 'deno'
   const nav = g.navigator as { userAgent?: string } | undefined
@@ -86,15 +86,18 @@ function detectRuntimeName(): RuntimeName {
 const RUNTIME_NAME: RuntimeName = detectRuntimeName()
 
 /**
- * Build a `getEnv` for the detected host. On Workers the bindings live on the
- * per-request `env` object passed as the second `fetch` argument, threaded in
- * here via `platformArgs`; elsewhere they come from a global.
+ * Build a `getEnv` for a host. On Workers the bindings live on the per-request
+ * `env` object passed as the second `fetch` argument, threaded in here via
+ * `platformArgs[0]`; elsewhere they come from a global. Exported (and
+ * parametrized by `name`) so each runtime's branch is unit-testable, not just the
+ * one that happens to match the test runner.
  */
-function makeGetEnv(
+export function makeGetEnv(
+  name: RuntimeName,
   platformArgs: readonly unknown[],
 ): (key: string) => string | undefined {
   const g = globalThis as Record<string, unknown>
-  switch (RUNTIME_NAME) {
+  switch (name) {
     case 'deno': {
       const deno = g.Deno as { env?: { get(k: string): string | undefined } }
       return (k) => deno?.env?.get(k)
@@ -117,12 +120,15 @@ function makeGetEnv(
 }
 
 /**
- * Seed a fresh base context for an entry call. `platformArgs` are the positional
- * arguments the host passed after `req` (a Workers `env`, a Deno
- * `ServeHandlerInfo`, …) — used only to source bindings, never merged into `ctx`.
+ * Seed a fresh base context for an entry call. `platformArgs` is the host's
+ * second `fetch` argument (a Workers `env`, a Deno `ServeHandlerInfo`, …), used
+ * only to source bindings — never merged into `ctx`. A third argument (the
+ * Workers `ExecutionContext`) is rejected upstream as not implemented.
  */
 export function seedContext(platformArgs: readonly unknown[]): BaseContext {
-  return { _runtime: { name: RUNTIME_NAME, getEnv: makeGetEnv(platformArgs) } }
+  return {
+    _runtime: { name: RUNTIME_NAME, getEnv: makeGetEnv(RUNTIME_NAME, platformArgs) },
+  }
 }
 
 /**

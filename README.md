@@ -71,6 +71,8 @@ ctx._runtime.getEnv('SUPABASE_DB_URL') // string | undefined, resolved per host
 
 The host is detected once at module load. On Cloudflare Workers, `getEnv` reads the per-request bindings the runtime passes to `fetch`; elsewhere it reads the host's global (`Deno.env`, `process.env`).
 
+Supported entry signatures are **`(request)`** and **`(request, env)`**. A third `fetch` argument — the Workers `ExecutionContext` (`waitUntil` / `passThroughOnException`) — is **not implemented** and throws if supplied; the Deno target never passes one.
+
 ## Request-side only — by design
 
 A middleware here runs **before** the handler and never observes or wraps the handler's `Response`. This is the deliberate difference from Express/Koa's onion model: there's no `next()`, no on-the-way-out response mutation. Anything response-shaped — CORS headers, response envelopes, rate-limit headers — belongs in an outer wrapper or the handler itself, so the response shape stays under one owner and each middleware's surface stays small.

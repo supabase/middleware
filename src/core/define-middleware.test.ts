@@ -49,26 +49,41 @@ describe('defineMiddleware', () => {
     expect(await res.json()).toEqual({ msg: 'world', host: 'node' })
   })
 
-  it('does not let a host-supplied platform arg leak into ctx', async () => {
-    const withGreeting = defineMiddleware<
-      'greeting',
-      undefined,
-      Record<never, never>,
-      { hello: string }
-    >({
-      key: 'greeting',
-      run: () => async () => ({ greeting: { hello: 'hi' } }),
-    })
+  const withGreeting = defineMiddleware<
+    'greeting',
+    undefined,
+    Record<never, never>,
+    { hello: string }
+  >({
+    key: 'greeting',
+    run: () => async () => ({ greeting: { hello: 'hi' } }),
+  })
 
+  it('does not let a host-supplied env (arg 2) leak into ctx', async () => {
     const fetchHandler = withGreeting(undefined, async (_req, ctx) =>
       Response.json({ keys: Object.keys(ctx) }),
     )
 
-    // Simulate a runtime calling fetch(req, env, execCtx) with an enumerable env.
+    // Simulate a runtime calling fetch(req, env) with an enumerable env object.
     const res = await (
       fetchHandler as (req: Request, ...a: unknown[]) => Promise<Response>
-    )(new Request('http://localhost/'), { SECRET: 's' }, { waitUntil() {} })
+    )(new Request('http://localhost/'), { SECRET: 's' })
     expect(await res.json()).toEqual({ keys: ['_runtime', 'greeting'] })
+  })
+
+  it('throws "not implemented" when a third fetch argument (exec context) is passed', async () => {
+    const fetchHandler = withGreeting(undefined, async () =>
+      Response.json({ ok: true }),
+    )
+
+    // Simulate Cloudflare Workers calling fetch(req, env, executionContext).
+    await expect(
+      (fetchHandler as (req: Request, ...a: unknown[]) => Promise<Response>)(
+        new Request('http://localhost/'),
+        { SECRET: 's' },
+        { waitUntil() {} },
+      ),
+    ).rejects.toThrow(/not implemented/i)
   })
 
   it('req body is readable from multiple layers (buffered request)', async () => {

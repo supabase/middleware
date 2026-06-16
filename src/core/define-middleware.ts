@@ -94,8 +94,17 @@ export function defineMiddleware<
         if (isContext(maybeCtx)) {
           upstream = maybeCtx
         } else {
+          // Entry call. A third positional argument is the host's execution
+          // context (the Cloudflare Workers `ExecutionContext` — `waitUntil` /
+          // `passThroughOnException`). We don't implement it; rather than
+          // silently dropping it, fail loudly. The Deno target never passes one.
+          if (rest.length > 0) {
+            throw new Error(
+              'web-middleware: a third fetch argument (the Workers ExecutionContext / waitUntil) was supplied, which is not implemented. Supported entry signatures are (request) and (request, env).',
+            )
+          }
           workingReq = req.body ? bufferRequest(req) : req
-          upstream = seedContext([maybeCtx, ...rest])
+          upstream = seedContext([maybeCtx])
         }
         const result = await inner(workingReq, upstream as In & BaseContext)
         if (result instanceof Response) return result
