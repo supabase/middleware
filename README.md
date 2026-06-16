@@ -35,18 +35,31 @@ pnpm add @supabase/web-middleware
 Each middleware contributes one typed key to `ctx`. Nest them; the inner handler sees the union. Add `satisfies FetchHandler` on the outermost handler to anchor the types so the innermost handler sees **every** upstream key ambiently:
 
 ```ts
+import { defineMiddleware } from '@supabase/web-middleware'
 import type { FetchHandler } from '@supabase/web-middleware'
 import { withFeatureFlag } from '@supabase/web-middleware/feature-flag'
 
+// A middleware is just a `defineMiddleware` call — bundled or your own.
+const withRequestId = defineMiddleware<
+  'requestId',
+  undefined,
+  Record<never, never>,
+  string
+>({
+  key: 'requestId',
+  run: () => async (req) => ({
+    requestId: req.headers.get('x-request-id') ?? crypto.randomUUID(),
+  }),
+})
+
 export default {
-  fetch: withFeatureFlag(
-    { name: 'beta', evaluate: (req) => req.headers.has('x-beta') },
-    // `.as` re-keys, so the same middleware can be applied twice (see below)
-    withFeatureFlag.as('canary')(
-      { name: 'canary', evaluate: (req) => req.headers.has('x-canary') },
+  fetch: withRequestId(
+    undefined,
+    withFeatureFlag(
+      { name: 'beta', evaluate: (req) => req.headers.has('x-beta') },
       async (_req, ctx) => {
-        ctx.featureFlag // from the outer withFeatureFlag
-        ctx.canary //     from withFeatureFlag.as('canary')
+        ctx.requestId //  from withRequestId
+        ctx.featureFlag // from withFeatureFlag
         ctx._runtime //   seeded automatically — ctx._runtime.getEnv('…'), ctx._runtime.name
         return new Response(null, { status: 200 })
       },
