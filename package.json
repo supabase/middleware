@@ -1,0 +1,83 @@
+{
+  "name": "@supabase/web-middleware",
+  "version": "0.1.0",
+  "description": "Composable, type-safe middleware for Web Fetch handlers. A middleware is a (config, handler) wrapper that runs against the inbound Request, contributes a typed key to ctx, and either short-circuits or falls through — the same shape across every runtime and framework.",
+  "keywords": [
+    "middleware",
+    "fetch",
+    "edge",
+    "supabase"
+  ],
+  "homepage": "https://github.com/supabase/web-middleware#readme",
+  "bugs": {
+    "url": "https://github.com/supabase/web-middleware/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/supabase/web-middleware.git"
+  },
+  "license": "MIT",
+  "author": "supabase",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    },
+    "./feature-flag": {
+      "types": "./dist/middleware/feature-flag/index.d.mts",
+      "import": "./dist/middleware/feature-flag/index.mjs",
+      "require": "./dist/middleware/feature-flag/index.cjs"
+    },
+    "./auth-hook": {
+      "types": "./dist/middleware/auth-hook/index.d.mts",
+      "import": "./dist/middleware/auth-hook/index.mjs",
+      "require": "./dist/middleware/auth-hook/index.cjs"
+    },
+    "./postgres": {
+      "types": "./dist/middleware/postgres/index.d.mts",
+      "import": "./dist/middleware/postgres/index.mjs",
+      "require": "./dist/middleware/postgres/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "main": "./dist/index.cjs",
+  "types": "./dist/index.d.cts",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@11.1.2+sha512.415a1cc25974731e75455c1468371be74c5aa5fb7621b50d4056d222451609f11412f23fd602e6169f1e060466641f798597e1be961a10688836a67b16569499",
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "format": "prettier --write .",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "pg": "^8.0.0"
+  },
+  "peerDependenciesMeta": {
+    "pg": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/pg": "^8.20.0",
+    "eslint": "^10.0.2",
+    "pg": "^8.21.0",
+    "prettier": "3.8.1",
+    "tsdown": "^0.20.3",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.56.1",
+    "vitest": "^4.0.18"
+  }
+}

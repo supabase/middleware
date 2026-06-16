@@ -1,0 +1,14 @@
+{
+  "name": "@supabase/web-middleware",
+  "version": "0.1.0",
+  "exports": {
+    ".": "./src/index.ts",
+    "./feature-flag": "./src/middleware/feature-flag/index.ts",
+    "./auth-hook": "./src/middleware/auth-hook/index.ts",
+    "./postgres": "./src/middleware/postgres/index.ts"
+  },
+  "publish": {
+    "include": ["src/**/*.ts", "README.md", "LICENSE"],
+    "exclude": ["src/**/*.test.ts", "src/**/*.spec.ts"]
+  }
+}
