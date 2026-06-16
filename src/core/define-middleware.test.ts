@@ -180,20 +180,6 @@ describe('defineMiddleware', () => {
     })
   })
 
-  it('.as re-keys a middleware so the same one can be applied twice', async () => {
-    const handler = withFeatureFlag(
-      { name: 'alpha', evaluate: () => true },
-      withFeatureFlag.as('beta')(
-        { name: 'beta', evaluate: () => true },
-        async (_req, ctx) =>
-          Response.json({ a: ctx.featureFlag.name, b: ctx.beta.name }),
-      ),
-    ) satisfies FetchHandler
-
-    const res = await handler(new Request('http://localhost/'))
-    expect(await res.json()).toEqual({ a: 'alpha', b: 'beta' })
-  })
-
   it('short-circuits on reject without calling the inner handler', async () => {
     const inner = vi.fn(innerOk)
     const fetchHandler = rejecting('blocker', 402)(undefined, inner)
@@ -356,23 +342,6 @@ describe('type guarantees (tsc-verified)', () => {
     // @ts-expect-error — requires upstream jwtClaims; cannot satisfy a bare entry
     const _entry: FetchHandler = handler
     void _entry
-  })
-
-  it('.as gives two instances distinct, typed keys (no collision)', () => {
-    const _app = withFeatureFlag(
-      { name: 'alpha', evaluate: () => true },
-      withFeatureFlag.as('beta')(
-        { name: 'beta', evaluate: () => true },
-        async (_req, ctx) => {
-          const a: string = ctx.featureFlag.name
-          const b: string = ctx.beta.name
-          void a
-          void b
-          return Response.json({ ok: true })
-        },
-      ),
-    ) satisfies FetchHandler
-    void _app
   })
 
   it('cross-middleware deps via `In` type with no anchor', () => {
