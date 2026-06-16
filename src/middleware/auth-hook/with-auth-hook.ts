@@ -14,7 +14,7 @@
 import {
   defineMiddleware,
   type BaseContext,
-  type Conflict,
+  type NoConflict,
 } from '../../core/index.js'
 
 import type { AuthHookPayload } from './types.js'
@@ -110,33 +110,19 @@ const authHookMiddleware = defineMiddleware<
   },
 })
 
-/** `true` only when `T` is exactly `any` — mirrors the carve-out in `defineMiddleware`. */
-type IsAny<T> = boolean extends (T extends never ? true : false) ? true : false
-
-/**
- * Resolves to a {@link Conflict} sentinel when `Base` already carries an
- * `authHook` key, surfacing the collision at the call site.
- */
-type NoAuthHookConflict<Base> =
-  IsAny<Base> extends true
-    ? object
-    : 'authHook' extends keyof Base
-      ? Conflict<'authHook'>
-      : object
-
 /**
  * Public, payload-generic surface for {@link withAuthHook}.
  *
  * `defineMiddleware` fixes the contribution type, so the middleware is re-typed
  * here to add a leading `Payload` type parameter (default {@link AuthHookPayload}).
- * The `Base` parameter and `NoAuthHookConflict` constraint reproduce the
- * machinery: `Base` is inferred from an outer wrapper so it can compose inside
- * an auth middleware, and a duplicate `authHook` key is a type error.
+ * The collision check reuses the core's exported {@link NoConflict} (rather than a
+ * hand-copy), so `Base` is inferred from an outer wrapper and a duplicate
+ * `authHook` key is a type error.
  */
 export interface WithAuthHook {
   <
     Payload = AuthHookPayload,
-    Base extends BaseContext & NoAuthHookConflict<Base> = BaseContext,
+    Base extends BaseContext & NoConflict<'authHook', Base> = BaseContext,
   >(
     config: WithAuthHookConfig,
     handler: (

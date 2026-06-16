@@ -125,14 +125,17 @@ export function defineMiddleware<
  * (common in tests via `vi.fn` inference), since `keyof any` would false-positive
  * every key.
  */
-type IsAny<T> = boolean extends (T extends never ? true : false) ? true : false
+export type IsAny<T> =
+  boolean extends (T extends never ? true : false) ? true : false
 
 /**
  * Resolves to a {@link Conflict} sentinel when `Base` already carries `Key`,
  * surfacing the collision at the call site (the sentinel string is not an
- * `object`, so the constraint fails).
+ * `object`, so the constraint fails). Exported so a middleware with a bespoke
+ * generic signature (e.g. one that adds a `Payload` type parameter) can reuse the
+ * core's collision check instead of hand-copying it.
  */
-type NoConflict<Key extends string, Base> =
+export type NoConflict<Key extends string, Base> =
   IsAny<Base> extends true
     ? object
     : Key extends keyof Base
