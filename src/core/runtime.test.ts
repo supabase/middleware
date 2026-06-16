@@ -19,14 +19,16 @@ describe('runtime detection + getEnv (arg 2 handling)', () => {
   })
 
   it('node / bun getEnv reads process.env (ignores platform args)', () => {
-    process!.env.__WM_TEST__ = 'present'
+    const { env } = (globalThis as { process: { env: Record<string, string | undefined> } })
+      .process
+    env.__WM_TEST__ = 'present'
     try {
       expect(makeGetEnv('node', [])('__WM_TEST__')).toBe('present')
       expect(makeGetEnv('bun', [{ __WM_TEST__: 'shadow' }])('__WM_TEST__')).toBe(
         'present',
       )
     } finally {
-      delete process!.env.__WM_TEST__
+      delete env.__WM_TEST__
     }
   })
 
