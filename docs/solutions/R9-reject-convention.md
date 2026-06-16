@@ -1,10 +1,18 @@
 # R9 — Reject convention + `ctx` naming
 
+> **⚠️ Superseded (reject helper part).** The shared `RejectConfig` + `rejection()`
+> helper described below was **removed**. Its premise was that _multiple_ middleware
+> reinvented `rejectStatus` / `rejectBody`; once `auth-hook` was dropped (auth →
+> `withSupabase`), `feature-flag` was the only short-circuiting middleware left, so a
+> shared helper is unjustified indirection. Middleware short-circuit by **returning a
+> `Response`**, so `feature-flag` now just returns `Response.json(...)` inline. The
+> `ctx`-naming decision below still stands.
+
 See [`API_RISK_PROFILE.md`](../../API_RISK_PROFILE.md) → R9.
 
 R9 had two parts: a small consistency risk (`rejectStatus` / `rejectBody` reinvented
-per middleware) and a naming opinion (`ctx`). One is fixed; the other is a documented
-decision.
+per middleware) and a naming opinion (`ctx`). The first is moot (single consumer); the
+second is a documented decision.
 
 ## Reject convention — fixed
 

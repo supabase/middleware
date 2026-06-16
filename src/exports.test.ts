@@ -13,7 +13,6 @@ describe('public API surface', () => {
   it('package root', () => {
     expect(Object.keys(root).sort()).toEqual([
       'defineMiddleware',
-      'rejection',
       'withCatch',
       'withResponse',
     ])
@@ -22,7 +21,6 @@ describe('public API surface', () => {
   it('core subpath', () => {
     expect(Object.keys(core).sort()).toEqual([
       'defineMiddleware',
-      'rejection',
       'withCatch',
       'withResponse',
     ])

@@ -11,14 +11,14 @@
  * file is referenced from both as the worked example of the pattern.
  */
 
-import { defineMiddleware, rejection, type RejectConfig } from '../../core/index.js'
+import { defineMiddleware } from '../../core/index.js'
 
 /**
  * Per-instance configuration the consumer passes to `withFeatureFlag(config, handler)`.
  *
  * Keep this surface small — every field becomes part of the public API.
  */
-export interface WithFeatureFlagConfig extends RejectConfig {
+export interface WithFeatureFlagConfig {
   /** Human-readable name for the flag. Echoed back on `ctx.featureFlag.name` and the default rejection body. */
   name: string
 
@@ -32,9 +32,17 @@ export interface WithFeatureFlagConfig extends RejectConfig {
     req: Request,
   ) => Promise<boolean | FeatureFlagVerdict> | boolean | FeatureFlagVerdict
 
-  // `rejectStatus` / `rejectBody` come from RejectConfig. Default reject is 404
-  // — "this feature doesn't exist for you yet" — a softer reveal than 403 that
-  // avoids tipping off attackers about the existence of gated functionality.
+  /**
+   * HTTP status when the flag rejects. Default is 404 — "this feature doesn't
+   * exist for you yet" — a softer reveal than 403 that avoids tipping off
+   * attackers about the existence of gated functionality.
+   *
+   * @defaultValue `404`
+   */
+  rejectStatus?: number
+
+  /** Body when the flag rejects. @defaultValue `{ error: 'feature_disabled', flag: <name> }` */
+  rejectBody?: unknown
 }
 
 /**
@@ -122,11 +130,11 @@ export const withFeatureFlag = defineMiddleware<
       typeof result === 'boolean' ? { enabled: result } : result
 
     if (!verdict.enabled) {
-      // Short-circuit: the inner handler is never invoked.
-      return rejection(config, {
-        status: 404,
-        body: { error: 'feature_disabled', flag: config.name },
-      })
+      // Short-circuit: return a Response, the inner handler is never invoked.
+      return Response.json(
+        config.rejectBody ?? { error: 'feature_disabled', flag: config.name },
+        { status: config.rejectStatus ?? 404 },
+      )
     }
 
     // Contribute: fall through to the inner handler with this shape on ctx.

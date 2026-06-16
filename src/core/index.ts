@@ -17,8 +17,6 @@ export { defineMiddleware } from './define-middleware.js'
 export type { IsAny, Middleware, NoConflict } from './define-middleware.js'
 export { withCatch } from './with-catch.js'
 export { withResponse } from './with-response.js'
-export { rejection } from './reject.js'
-export type { RejectConfig } from './reject.js'
 export type {
   BaseContext,
   FetchHandler,
