@@ -24,27 +24,10 @@ so it must be nested inside a wrapper that contributes `ctx.jwtClaims`. Composin
 outermost handler is a **compile-time** type error — this holds whether or not you enable
 `admin`, since the RLS-scoped `db` client always needs the caller's claims.
 
-The quickest upstream is the bundled [`@supabase/web-middleware/auth`](../auth/README.md)
-middleware, which verifies a Supabase JWT and contributes `ctx.jwtClaims`:
-
-```ts
-import { withAuth } from '@supabase/web-middleware/auth'
-import { withPostgres } from '@supabase/web-middleware/postgres'
-
-export default {
-  fetch: withAuth(
-    {}, // jwtSecret from SUPABASE_JWT_SECRET
-    withPostgres({}, async (_req, ctx) => {
-      const mine = await ctx.postgres.db.query('select * from notes')
-      return Response.json({ notes: mine.rows })
-    }),
-  ),
-}
-```
-
-You can also provide `jwtClaims` from your own auth layer — any middleware that
-contributes it works. The smallest possible upstream decodes the token and contributes
-the claims directly:
+This package is **auth-agnostic** — it doesn't ship an auth middleware (JWT
+verification belongs in your auth layer, e.g. [`@supabase/server`](https://github.com/supabase/server)).
+Provide `jwtClaims` from any upstream middleware that contributes it. The smallest
+possible upstream decodes the token and contributes the claims directly:
 
 ```ts
 import {

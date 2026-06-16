@@ -4,6 +4,11 @@ See [`API_RISK_PROFILE.md`](../../API_RISK_PROFILE.md) → R7.
 
 ## The problem
 
+> **Note:** `auth-hook` was later removed from web-middleware (auth is owned by
+> `withSupabase`). The `auth-hook`-specific detail below is historical; the durable
+> outcome — **`NoConflict` / `IsAny` are exported from core** for any third-party
+> middleware with a bespoke generic signature — still stands.
+
 When a middleware needs a bespoke generic signature — e.g. `auth-hook` adds a
 `Payload` type parameter on top of what `defineMiddleware` produces — the author had
 to **hand-copy the core's collision machinery**: `auth-hook` reimplemented `IsAny`

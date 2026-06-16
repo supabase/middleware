@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest'
 
 import * as root from './index.js'
 import * as core from './core/index.js'
-import * as auth from './middleware/auth/index.js'
-import * as authHook from './middleware/auth-hook/index.js'
 import * as featureFlag from './middleware/feature-flag/index.js'
 import * as postgres from './middleware/postgres/index.js'
 
@@ -33,9 +31,6 @@ describe('public API surface', () => {
 
   it('middleware subpaths', () => {
     expect(typeof featureFlag.withFeatureFlag).toBe('function')
-    expect(typeof authHook.withAuthHook).toBe('function')
     expect(typeof postgres.withPostgres).toBe('function')
-    expect(typeof auth.withAuth).toBe('function')
-    expect(typeof auth.verifySupabaseJwt).toBe('function')
   })
 })

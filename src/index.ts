@@ -2,11 +2,11 @@
  * `@supabase/web-middleware` — composable, type-safe middleware for Web Fetch
  * handlers.
  *
- * The package root exports the {@link defineMiddleware} primitive and its
- * supporting types. The built-in middleware live behind subpaths:
+ * The package root exports the {@link defineMiddleware} primitive, the
+ * `withCatch` / `withResponse` wrappers, and supporting types. The built-in
+ * middleware live behind subpaths:
  *
  * - `@supabase/web-middleware/feature-flag`
- * - `@supabase/web-middleware/auth-hook`
  * - `@supabase/web-middleware/postgres`
  *
  * @packageDocumentation

@@ -93,8 +93,8 @@ describe('defineMiddleware', () => {
   })
 
   it('req body is readable from multiple layers (buffered request)', async () => {
-    // A body-reading middleware (models auth-hook) followed by a handler that
-    // also reads the body — both read `req` directly, no "Body already consumed".
+    // A body-reading middleware (e.g. a signature check) followed by a handler
+    // that also reads the body — both read `req`, no "Body already consumed".
     const withReader = defineMiddleware<
       'reader',
       undefined,

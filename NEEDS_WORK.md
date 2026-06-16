@@ -101,20 +101,12 @@ trusts the `jwtClaims` provider"), but no code change.
 
 ---
 
-## 3. JWT algorithm support (HS256 vs asymmetric / JWKS) — 🟪 `withSupabase`
+## 3 & 4. Auth / JWT verification — 🟩 resolved (dropped from core)
 
-`withAuth` (HS256-only) silently returns `null` (→ anon) for a valid asymmetric token,
-which is the default for new Supabase projects. **Disposition: this is a `withSupabase`
-implementation detail.** Auth/JWT verification — algorithm support, key fetching —
-belongs to the `withSupabase` layer (the `supabase/server` migration), not core.
-
-> Implication to revisit: the bundled `/auth` subpath (`withAuth`, shipped for R8) is
-> really a `withSupabase` concern. Decide whether core keeps a minimal auth middleware
-> or defers entirely to `withSupabase` once it lands on web-middleware.
-
-## 4. `withAuth` can't distinguish "no token" from "bad token" — 🟪 `withSupabase`
-
-Both → `null`/anon, so a misconfig (wrong secret, asymmetric token, clock skew)
-silently yields empty results. **Disposition: also a `withSupabase` implementation
-detail** — the anon-vs-error semantics (and any `console.warn`/strict mode for
-"present but unverifiable") live in that layer.
+The bundled `/auth` (`withAuth`, HS256-only) and `/auth-hook` middleware have been
+**removed from web-middleware**. Auth/JWT verification — algorithm support (HS256 vs
+asymmetric/JWKS), key fetching, anon-vs-error semantics, and Supabase Auth Hooks — is
+Supabase-specific and is owned by `withSupabase` (the `supabase/server` migration,
+which already does this with `jose`). web-middleware stays the auth-agnostic substrate:
+`withPostgres` still declares `In: { jwtClaims }`, and the consumer's auth middleware
+(e.g. `withSupabase`) contributes it.

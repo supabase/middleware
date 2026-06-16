@@ -25,20 +25,10 @@
       "import": "./dist/index.mjs",
       "require": "./dist/index.cjs"
     },
-    "./auth": {
-      "types": "./dist/middleware/auth/index.d.mts",
-      "import": "./dist/middleware/auth/index.mjs",
-      "require": "./dist/middleware/auth/index.cjs"
-    },
     "./feature-flag": {
       "types": "./dist/middleware/feature-flag/index.d.mts",
       "import": "./dist/middleware/feature-flag/index.mjs",
       "require": "./dist/middleware/feature-flag/index.cjs"
-    },
-    "./auth-hook": {
-      "types": "./dist/middleware/auth-hook/index.d.mts",
-      "import": "./dist/middleware/auth-hook/index.mjs",
-      "require": "./dist/middleware/auth-hook/index.cjs"
     },
     "./postgres": {
       "types": "./dist/middleware/postgres/index.d.mts",

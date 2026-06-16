@@ -98,8 +98,9 @@ const postgresMiddleware = defineMiddleware<
  * ```ts
  * import { withPostgres } from '@supabase/web-middleware/postgres'
  *
- * // `withAuth` is any upstream middleware that contributes `ctx.jwtClaims`.
- * withAuth({ ... },
+ * // `withYourAuth` is any upstream middleware that contributes `ctx.jwtClaims`
+ * // (e.g. withSupabase). web-middleware ships no auth middleware itself.
+ * withYourAuth({ ... },
  *   withPostgres({}, async (_req, ctx) => {
  *     // auth.uid() = ctx.jwtClaims.sub; RLS applies
  *     const mine = await ctx.postgres.db.query('select * from notes')
@@ -109,7 +110,7 @@ const postgresMiddleware = defineMiddleware<
  *
  * @example With the RLS-bypassing admin client:
  * ```ts
- * withAuth({ ... },
+ * withYourAuth({ ... },
  *   withPostgres({ admin: true }, async (_req, ctx) => {
  *     const mine = await ctx.postgres.db.query('select * from notes')
  *     const all = await ctx.postgres.adminDb.query('select count(*) from notes')

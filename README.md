@@ -28,9 +28,7 @@ pnpm add @supabase/web-middleware
 | Import                                  | What it does                                                                                                                   |
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `@supabase/web-middleware`              | The `defineMiddleware` primitive, `withCatch` / `withResponse` + `Runtime` / `FetchHandler` / `Middleware` / `Conflict` types. |
-| `@supabase/web-middleware/auth`         | Verify a Supabase JWT (HS256) → `ctx.jwtClaims`. The upstream `withPostgres` needs.                                            |
 | `@supabase/web-middleware/feature-flag` | Provider-agnostic feature flag — admit or short-circuit per request.                                                           |
-| `@supabase/web-middleware/auth-hook`    | Verify a Supabase Auth Hook's Standard Webhooks signature.                                                                     |
 | `@supabase/web-middleware/postgres`     | RLS-scoped (and optional RLS-bypassing) Postgres client. Node/Deno.                                                            |
 
 ## How it composes
@@ -39,18 +37,21 @@ Each middleware contributes one typed key to `ctx`. Nest them; the inner handler
 
 ```ts
 import type { FetchHandler } from '@supabase/web-middleware'
-import { withAuthHook } from '@supabase/web-middleware/auth-hook'
 import { withFeatureFlag } from '@supabase/web-middleware/feature-flag'
 
 export default {
   fetch: withFeatureFlag(
     { name: 'beta', evaluate: (req) => req.headers.has('x-beta') },
-    withAuthHook({ secret: 'whsec_…' }, async (_req, ctx) => {
-      ctx.featureFlag // from withFeatureFlag
-      ctx.authHook //   from withAuthHook
-      ctx._runtime //    seeded automatically — ctx._runtime.getEnv('…'), ctx._runtime.name
-      return new Response(null, { status: 200 })
-    }),
+    // `.as` re-keys, so the same middleware can be applied twice (see below)
+    withFeatureFlag.as('canary')(
+      { name: 'canary', evaluate: (req) => req.headers.has('x-canary') },
+      async (_req, ctx) => {
+        ctx.featureFlag // from the outer withFeatureFlag
+        ctx.canary //     from withFeatureFlag.as('canary')
+        ctx._runtime //   seeded automatically — ctx._runtime.getEnv('…'), ctx._runtime.name
+        return new Response(null, { status: 200 })
+      },
+    ),
   ) satisfies FetchHandler,
 }
 ```
@@ -88,7 +89,7 @@ Both are transparent to the call signature, so the result stays a `fetch` entry 
 
 - [Composition primitives](./src/core/README.md) — `ctx` shape, conflict & prerequisite enforcement, composition rules.
 - [Authoring guide](./src/middleware/README.md) — write your own middleware with `defineMiddleware`.
-- Per-middleware: [feature-flag](./src/middleware/feature-flag/README.md) · [auth-hook](./src/middleware/auth-hook/README.md) · [postgres](./src/middleware/postgres/README.md)
+- Per-middleware: [feature-flag](./src/middleware/feature-flag/README.md) · [postgres](./src/middleware/postgres/README.md)
 
 ## License
 

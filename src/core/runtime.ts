@@ -162,7 +162,7 @@ const BUFFERED_METHODS = new Set([
  * A Fetch `Request` body is a single-use stream — the first reader of
  * `req.text()` / `req.json()` / … locks out every later one. This returns a
  * proxy that reads the underlying body **at most once** and caches the bytes, so
- * a body-verifying middleware (`auth-hook`) and the handler can each read it, in
+ * a body-verifying middleware (e.g. a webhook signature check) and the handler can each read it, in
  * any form:
  *
  * - `arrayBuffer` / `bytes` / `blob` / `text` / `json` / **`formData`** all read

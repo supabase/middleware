@@ -37,7 +37,7 @@ Inside a wrapped handler, `ctx` is a flat intersection — the framework seeds t
 > **Reading the body.** Read it off **`req`** as usual — `req.text()` / `req.json()` /
 > `req.arrayBuffer()` / `req.bytes()`. The framework hands every layer a buffered
 > request that caches the body after the first read, so a body-verifying middleware
-> (`auth-hook`) and your handler can both read it without "Body already consumed".
+> (e.g. a webhook signature check) and your handler can both read it without "Body already consumed".
 > (Reading the raw `req.body` stream or `req.formData()` still consumes once.)
 
 Two type-level guarantees:

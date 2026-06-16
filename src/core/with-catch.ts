@@ -2,10 +2,9 @@
  * `withCatch` — an opt-in error boundary for a composed handler stack.
  *
  * Middleware here are request-side only and cannot observe the inner handler's
- * outcome, so a throw from any layer (a handler bug, or `auth-hook`'s
- * post-verification `JSON.parse` on a malformed-but-signed body) otherwise
- * propagates to the host, which returns its default `500`. `withCatch` wraps the
- * stack so those throws become a `Response` you define.
+ * outcome, so a throw from any layer (a handler bug, or a `JSON.parse` on a
+ * malformed body) otherwise propagates to the host, which returns its default
+ * `500`. `withCatch` wraps the stack so those throws become a `Response` you define.
  *
  * It is **not** a mandatory entry wrapper — it's a transparent pass-through you
  * add only where you want error containment. It preserves the wrapped handler's

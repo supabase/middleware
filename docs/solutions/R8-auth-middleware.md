@@ -1,5 +1,12 @@
 # R8 — Postgres unusable out of the box (no `jwtClaims` producer)
 
+> **⚠️ Superseded.** The `@supabase/web-middleware/auth` (`withAuth`) middleware
+> described below was later **removed** from web-middleware (along with `/auth-hook`).
+> Auth/JWT verification is Supabase-specific and is owned by `withSupabase`
+> (`supabase/server`). web-middleware stays auth-agnostic: `withPostgres` declares
+> `In: { jwtClaims }` and the consumer's auth middleware contributes it. This doc is
+> kept as the record of why `/auth` was tried; see `NEEDS_WORK.md` §3&4.
+
 See [`API_RISK_PROFILE.md`](../../API_RISK_PROFILE.md) → R8.
 
 ## The problem
