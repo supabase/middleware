@@ -25,12 +25,13 @@ pnpm add @supabase/web-middleware
 
 ## What's in the box
 
-| Import                                  | What it does                                                                                     |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `@supabase/web-middleware`              | The `defineMiddleware` primitive + `Runtime` / `FetchHandler` / `Middleware` / `Conflict` types. |
-| `@supabase/web-middleware/feature-flag` | Provider-agnostic feature flag — admit or short-circuit per request.                             |
-| `@supabase/web-middleware/auth-hook`    | Verify a Supabase Auth Hook's Standard Webhooks signature.                                       |
-| `@supabase/web-middleware/postgres`     | RLS-scoped (and optional RLS-bypassing) Postgres client. Node/Deno.                              |
+| Import                                  | What it does                                                                                                  |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `@supabase/web-middleware`              | The `defineMiddleware` primitive, `withCatch` + `Runtime` / `FetchHandler` / `Middleware` / `Conflict` types. |
+| `@supabase/web-middleware/auth`         | Verify a Supabase JWT (HS256) → `ctx.jwtClaims`. The upstream `withPostgres` needs.                           |
+| `@supabase/web-middleware/feature-flag` | Provider-agnostic feature flag — admit or short-circuit per request.                                          |
+| `@supabase/web-middleware/auth-hook`    | Verify a Supabase Auth Hook's Standard Webhooks signature.                                                    |
+| `@supabase/web-middleware/postgres`     | RLS-scoped (and optional RLS-bypassing) Postgres client. Node/Deno.                                           |
 
 ## How it composes
 

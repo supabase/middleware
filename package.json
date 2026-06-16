@@ -25,6 +25,11 @@
       "import": "./dist/index.mjs",
       "require": "./dist/index.cjs"
     },
+    "./auth": {
+      "types": "./dist/middleware/auth/index.d.mts",
+      "import": "./dist/middleware/auth/index.mjs",
+      "require": "./dist/middleware/auth/index.cjs"
+    },
     "./feature-flag": {
       "types": "./dist/middleware/feature-flag/index.d.mts",
       "import": "./dist/middleware/feature-flag/index.mjs",
