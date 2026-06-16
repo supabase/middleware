@@ -1,0 +1,41 @@
+import { describe, expect, it } from 'vitest'
+
+import * as root from './index.js'
+import * as core from './core/index.js'
+import * as auth from './middleware/auth/index.js'
+import * as authHook from './middleware/auth-hook/index.js'
+import * as featureFlag from './middleware/feature-flag/index.js'
+import * as postgres from './middleware/postgres/index.js'
+
+/**
+ * Guards the public *value* exports of every entry point. Type-only exports are
+ * erased at runtime and covered by `tsc`; this catches a value export silently
+ * disappearing in a refactor.
+ */
+describe('public API surface', () => {
+  it('package root', () => {
+    expect(Object.keys(root).sort()).toEqual([
+      'defineMiddleware',
+      'rejection',
+      'withCatch',
+      'withResponse',
+    ])
+  })
+
+  it('core subpath', () => {
+    expect(Object.keys(core).sort()).toEqual([
+      'defineMiddleware',
+      'rejection',
+      'withCatch',
+      'withResponse',
+    ])
+  })
+
+  it('middleware subpaths', () => {
+    expect(typeof featureFlag.withFeatureFlag).toBe('function')
+    expect(typeof authHook.withAuthHook).toBe('function')
+    expect(typeof postgres.withPostgres).toBe('function')
+    expect(typeof auth.withAuth).toBe('function')
+    expect(typeof auth.verifySupabaseJwt).toBe('function')
+  })
+})

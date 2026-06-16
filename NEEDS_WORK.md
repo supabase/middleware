@@ -13,23 +13,22 @@ Status key: 🟥 needs work · 🟩 resolved · 🟦 by design · 🟪 owned by 
 
 ---
 
-## 1. Universal response-shaping (CORS, headers, timing) — 🟥 needs work
+## 1. Universal response-shaping (CORS, headers) — 🟩 resolved
 
-Request-side-only means the most common edge-function need — **CORS** (preflight +
-`Access-Control-*` on the response), plus response headers, response logging-with-
-timing, caching — can't be expressed as a middleware. `withCatch` only covers errors.
-Today the answer is "hand-roll an outer wrapper" with no `ctx`/typing.
+Was: request-side-only meant CORS / response headers / envelopes couldn't be
+expressed; `withCatch` only covered errors.
 
-**Disposition (decided): find a solution that applies _universally_, not a
-Supabase-specific CORS wrapper.** Open design question:
+**Disposition (done): a _universal_ response seam, not a Supabase-specific CORS
+wrapper.** Shipped `withResponse(transform, handler)` (`with-response.ts`, package
+root): a transparent outer wrapper that maps the final `Response`. CORS is just one
+`transform`; the preflight half is a normal request-side middleware that
+short-circuits on `OPTIONS`, so CORS is expressible end to end (tested). It composes
+with `withCatch` and stays a `fetch` entry. It deliberately maps only the final
+response — no per-middleware response access (no onion model).
 
-- A response-side combinator that still composes with the stack and sees `ctx` — e.g.
-  an opt-in `finalize(res, ctx)` channel, or a `withResponse(transform, handler)`
-  outer wrapper that is transparent to the call signature (like `withCatch`).
-- Must stay generic (CORS is just one instance of "transform the response"); avoid
-  baking Supabase/CORS specifics into core.
-- Tension to respect: this is the deliberate request-side-only scope (R3). The bar is
-  a _minimal, universal_ response seam, not the Express/Koa onion model.
+Possible follow-up (not blocking): a richer `finalize(res, ctx)` channel if a use case
+needs response shaping that depends on a middleware's own `ctx` (e.g. timing using a
+contributed start-time). Not built — `withResponse` covers the known cases.
 
 ## 6. `bufferRequest` proxy sharp edges — 🟩 resolved (one documented limit)
 
@@ -60,12 +59,18 @@ buffering model, not streaming. To forward the body, reconstruct it from
   **tests** still rely on them (`process.env` in the postgres + runtime tests). So
   it's not dead; it could be replaced by `@types/node` + Deno's lib in a test
   tsconfig if we want `src` and tests to stop sharing an ambient global. Low priority.
-- **No public-API surface test.** A refactor could silently drop a root/subpath
-  export. Add a small "these exports exist" test.
+- **Public-API surface test** — 🟩 done (`src/exports.test.ts` asserts the value
+  exports of every entry point).
 - **`isContext` runtime trap (JS-land only).** Invoking a handler directly with a
   partial `ctx` lacking `_runtime` is re-seeded as if it were a platform arg, silently
-  dropping the supplied keys. Type-caught in TS (`Base extends BaseContext`), but a
-  trap in plain JS / hand-rolled tests. Consider a dev-time guard.
+  dropping the supplied keys. Type-caught in TS (`Base extends BaseContext`). **No
+  clean runtime fix** — a host `env` is also a plain object without `_runtime`, so a
+  guard can't distinguish "user passed a partial ctx" from "host passed env" without
+  false-positives. Left as a documented TS-caught caveat.
+- **Body-size limit on `bufferRequest`** — _not a distinct risk._ The body is only
+  buffered when a layer reads it, and reading a body buffers it natively anyway; the
+  cache just holds the bytes slightly longer. No guard needed beyond the streaming
+  note already documented.
 
 ---
 

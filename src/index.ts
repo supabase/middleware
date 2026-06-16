@@ -13,8 +13,11 @@
  */
 
 export { defineMiddleware } from './core/define-middleware.js'
-export type { Middleware } from './core/define-middleware.js'
+export type { IsAny, Middleware, NoConflict } from './core/define-middleware.js'
 export { withCatch } from './core/with-catch.js'
+export { withResponse } from './core/with-response.js'
+export { rejection } from './core/reject.js'
+export type { RejectConfig } from './core/reject.js'
 export type {
   BaseContext,
   FetchHandler,

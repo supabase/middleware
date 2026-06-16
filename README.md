@@ -25,13 +25,13 @@ pnpm add @supabase/web-middleware
 
 ## What's in the box
 
-| Import                                  | What it does                                                                                                  |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `@supabase/web-middleware`              | The `defineMiddleware` primitive, `withCatch` + `Runtime` / `FetchHandler` / `Middleware` / `Conflict` types. |
-| `@supabase/web-middleware/auth`         | Verify a Supabase JWT (HS256) → `ctx.jwtClaims`. The upstream `withPostgres` needs.                           |
-| `@supabase/web-middleware/feature-flag` | Provider-agnostic feature flag — admit or short-circuit per request.                                          |
-| `@supabase/web-middleware/auth-hook`    | Verify a Supabase Auth Hook's Standard Webhooks signature.                                                    |
-| `@supabase/web-middleware/postgres`     | RLS-scoped (and optional RLS-bypassing) Postgres client. Node/Deno.                                           |
+| Import                                  | What it does                                                                                                                   |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `@supabase/web-middleware`              | The `defineMiddleware` primitive, `withCatch` / `withResponse` + `Runtime` / `FetchHandler` / `Middleware` / `Conflict` types. |
+| `@supabase/web-middleware/auth`         | Verify a Supabase JWT (HS256) → `ctx.jwtClaims`. The upstream `withPostgres` needs.                                            |
+| `@supabase/web-middleware/feature-flag` | Provider-agnostic feature flag — admit or short-circuit per request.                                                           |
+| `@supabase/web-middleware/auth-hook`    | Verify a Supabase Auth Hook's Standard Webhooks signature.                                                                     |
+| `@supabase/web-middleware/postgres`     | RLS-scoped (and optional RLS-bypassing) Postgres client. Node/Deno.                                                            |
 
 ## How it composes
 
@@ -75,7 +75,14 @@ Supported entry signatures are **`(request)`** and **`(request, env)`**. A third
 
 ## Request-side only — by design
 
-A middleware here runs **before** the handler and never observes or wraps the handler's `Response`. This is the deliberate difference from Express/Koa's onion model: there's no `next()`, no on-the-way-out response mutation. Anything response-shaped — CORS headers, response envelopes, rate-limit headers — belongs in an outer wrapper or the handler itself, so the response shape stays under one owner and each middleware's surface stays small.
+A middleware here runs **before** the handler and never observes or wraps the handler's `Response`. This is the deliberate difference from Express/Koa's onion model: there's no `next()`, no on-the-way-out response mutation.
+
+For the response side, two opt-in wrappers keep that concern under one owner instead of scattering it across middleware:
+
+- **`withCatch(onError, handler)`** — contain a thrown error behind a `Response` you define.
+- **`withResponse(transform, handler)`** — map the final `Response` (CORS/security headers, envelopes, status). Generic; CORS headers are just one `transform`. The preflight half is a normal request-side middleware that short-circuits on `OPTIONS`, so CORS is expressible end to end.
+
+Both are transparent to the call signature, so the result stays a `fetch` entry and they compose: `withCatch(onError, withResponse(addCors, stack))`.
 
 ## Docs
 
