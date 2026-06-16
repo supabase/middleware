@@ -146,13 +146,14 @@ export function isContext(value: unknown): value is BaseContext {
   )
 }
 
-/** Body-consuming `Request` methods that the buffered proxy re-implements with a cache. */
+/** Body-reading `Request` methods the buffered proxy re-implements from a single cached read. */
 const BUFFERED_METHODS = new Set([
   'arrayBuffer',
   'bytes',
   'blob',
   'text',
   'json',
+  'formData',
 ])
 
 /**
@@ -161,13 +162,24 @@ const BUFFERED_METHODS = new Set([
  * A Fetch `Request` body is a single-use stream — the first reader of
  * `req.text()` / `req.json()` / … locks out every later one. This returns a
  * proxy that reads the underlying body **at most once** and caches the bytes, so
- * a body-verifying middleware (`auth-hook`) and the handler can each read it.
- * Everything else (headers, url, method, signal, …) forwards to the real
- * request, and `proxy instanceof Request` stays true.
+ * a body-verifying middleware (`auth-hook`) and the handler can each read it, in
+ * any form:
+ *
+ * - `arrayBuffer` / `bytes` / `blob` / `text` / `json` / **`formData`** all read
+ *   from the one cached read (`formData` is parsed from the cached bytes using
+ *   the request's `content-type`).
+ * - **`clone()`** returns another handle over the same cache — reading either
+ *   yields the same body; `headers` / `url` / `method` / `signal` / … forward to
+ *   the real request, and `proxy instanceof Request` stays true.
  *
  * The proxy is created once at the entry call and flows down the stack, so the
- * cache is shared. Reading `req.body` (the raw stream) or `req.formData()`
- * directly still bypasses the cache — those are not buffered.
+ * cache is shared across every layer.
+ *
+ * **One deliberate limit:** reading the raw `req.body` *stream* (e.g. handing the
+ * request to `fetch()` to forward it) bypasses the cache. By design this is a
+ * *buffering* model, not a streaming one — to forward the body, reconstruct it,
+ * e.g. `new Request(req.url, { method: req.method, headers: req.headers, body:
+ * await req.arrayBuffer() })`.
  */
 export function bufferRequest(req: Request): Request {
   let buffer: Promise<ArrayBuffer> | undefined
@@ -180,16 +192,24 @@ export function bufferRequest(req: Request): Request {
     json: async () => JSON.parse(await text()) as unknown,
     bytes: async () => new Uint8Array(await arrayBuffer()),
     blob: async () => new Blob([await arrayBuffer()]),
+    // Parse the cached bytes with the request's content-type (multipart /
+    // urlencoded), so a form body survives an upstream read.
+    formData: async () =>
+      new Response(await arrayBuffer(), { headers: req.headers }).formData(),
   }
-  return new Proxy(req, {
+  const handler: ProxyHandler<Request> = {
     get(target, prop) {
       if (typeof prop === 'string' && BUFFERED_METHODS.has(prop)) {
         return cached[prop]
       }
+      // A clone is another handle over the same cached body (sharing `handler`,
+      // hence the same `buffer`); other members forward to the real request.
+      if (prop === 'clone') return () => new Proxy(target, handler)
       // Read with receiver = target so native accessors (headers, url, …) run
       // against the real request's internal slots, and bind methods to it.
       const value = Reflect.get(target, prop, target)
       return typeof value === 'function' ? value.bind(target) : value
     },
-  })
+  }
+  return new Proxy(req, handler)
 }

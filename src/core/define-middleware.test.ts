@@ -124,6 +124,62 @@ describe('defineMiddleware', () => {
     expect(await res.json()).toEqual({ len: 17, hello: 'world' })
   })
 
+  it('buffered req: formData() works after a middleware reads the body', async () => {
+    const withReader = defineMiddleware<
+      'reader',
+      undefined,
+      Record<never, never>,
+      { len: number }
+    >({
+      key: 'reader',
+      run: () => async (req) => ({ reader: { len: (await req.text()).length } }),
+    })
+
+    const fetchHandler = withReader(undefined, async (req) => {
+      const form = await req.formData()
+      return Response.json({ a: form.get('a'), b: form.get('b') })
+    })
+
+    const res = await fetchHandler(
+      new Request('http://localhost/', {
+        method: 'POST',
+        body: new URLSearchParams({ a: '1', b: '2' }),
+      }),
+    )
+    expect(await res.json()).toEqual({ a: '1', b: '2' })
+  })
+
+  it('buffered req: clone() shares the cached body', async () => {
+    const passthrough = defineMiddleware<
+      'p',
+      undefined,
+      Record<never, never>,
+      { ok: true }
+    >({ key: 'p', run: () => async () => ({ p: { ok: true } }) })
+
+    const fetchHandler = passthrough(undefined, async (req) => {
+      const original = await req.json()
+      const cloned = await req.clone().json() // clone reads the same cached body
+      return Response.json({
+        original,
+        cloned,
+        sameUrl: req.clone().url === req.url,
+      })
+    })
+
+    const res = await fetchHandler(
+      new Request('http://localhost/', {
+        method: 'POST',
+        body: JSON.stringify({ n: 1 }),
+      }),
+    )
+    expect(await res.json()).toEqual({
+      original: { n: 1 },
+      cloned: { n: 1 },
+      sameUrl: true,
+    })
+  })
+
   it('.as re-keys a middleware so the same one can be applied twice', async () => {
     const handler = withFeatureFlag(
       { name: 'alpha', evaluate: () => true },

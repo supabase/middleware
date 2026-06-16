@@ -31,30 +31,35 @@ Supabase-specific CORS wrapper.** Open design question:
 - Tension to respect: this is the deliberate request-side-only scope (R3). The bar is
   a _minimal, universal_ response seam, not the Express/Koa onion model.
 
-## 6. `bufferRequest` proxy sharp edges — 🟥 needs work
+## 6. `bufferRequest` proxy sharp edges — 🟩 resolved (one documented limit)
 
-`bufferRequest` only caches `arrayBuffer` / `bytes` / `blob` / `text` / `json`. Sharp
-edges that can hurt consumers:
+Was: only `arrayBuffer` / `bytes` / `blob` / `text` / `json` were cached, so
+`req.formData()` and `req.clone()` after an upstream read threw `Body already
+consumed`.
 
-- **`req.formData()`** after a body-reading middleware (e.g. a form-encoded POST
-  behind `auth-hook`) throws `Body already consumed` — not cached.
-- **`req.clone()`** after a cached read throws (the underlying body is consumed).
-- Passing the **proxied `req`** to `fetch()` / `new Request(req)` may behave oddly
-  (the proxy forwards the raw `req.body` stream).
+**Disposition (done): we don't want sharp edges that might hurt consumers.**
+Implemented (`runtime.ts`):
 
-**Disposition (decided): we don't want sharp edges that might hurt consumers.** Make
-the buffered request faithful:
+- **`formData()`** now reads from the cached bytes
+  (`new Response(await arrayBuffer(), { headers: req.headers }).formData()`), so a
+  form-encoded POST survives an upstream read.
+- **`clone()`** returns another handle over the same cache — reading either yields
+  the same body; `headers`/`url`/`method`/… forward to the real request.
+- Tests: form POST read by a middleware then `req.formData()` in the handler; clone
+  reads the same cached body.
 
-- Add `formData()` to the cache, derivable from cached bytes:
-  `new Response(await arrayBuffer(), { headers: req.headers }).formData()`.
-- Decide `clone()` semantics (return a fresh re-readable wrapper over the cached
-  bytes) or document it as unsupported and guard it.
-- Audit `req.body` / fetch-passthrough; document precisely what is and isn't faithful.
+**One deliberate, documented limit:** reading the raw `req.body` _stream_ (e.g.
+passing the request to `fetch()` to forward it) bypasses the cache — this is a
+buffering model, not streaming. To forward the body, reconstruct it from
+`await req.arrayBuffer()`. Documented in the `bufferRequest` JSDoc.
 
 ## Minor — 🟥 needs work
 
-- **`src/env.d.ts` is dead.** Runtime reads globals via `globalThis` casts now; the
-  ambient `Deno` / `process` declarations are unused (and not published). Delete it.
+- **`src/env.d.ts` scope.** Core runtime code reads globals via `globalThis` casts,
+  so the ambient `Deno` / `process` declarations are unused by `src` — but the
+  **tests** still rely on them (`process.env` in the postgres + runtime tests). So
+  it's not dead; it could be replaced by `@types/node` + Deno's lib in a test
+  tsconfig if we want `src` and tests to stop sharing an ambient global. Low priority.
 - **No public-API surface test.** A refactor could silently drop a root/subpath
   export. Add a small "these exports exist" test.
 - **`isContext` runtime trap (JS-land only).** Invoking a handler directly with a
