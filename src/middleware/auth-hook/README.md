@@ -10,7 +10,7 @@ import {
 
 export default {
   fetch: withAuthHook<SendEmailHookPayload>(
-    { secret: process.env.SEND_EMAIL_HOOK_SECRET! },
+    { secret: Deno.env.get('SEND_EMAIL_HOOK_SECRET')! },
     async (_req, ctx) => {
       const { user, email_data } = ctx.authHook.payload
       // ...send the email with your provider...

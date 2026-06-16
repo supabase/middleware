@@ -42,25 +42,16 @@ export type Claims = { sub?: string; role?: string; [k: string]: unknown }
 
 let defaultPool: Pool | undefined
 
-/** Read `SUPABASE_DB_URL` across Deno / Node / Bun. */
-function dbUrl(): string | undefined {
-  if (typeof Deno !== 'undefined' && Deno.env?.get) {
-    return Deno.env.get('SUPABASE_DB_URL')
-  }
-  if (typeof process !== 'undefined' && process.env) {
-    return process.env.SUPABASE_DB_URL
-  }
-  return undefined
-}
-
 /**
  * Resolve the pool to use: an explicit `override`, or a lazily-created module
- * default backed by `SUPABASE_DB_URL`. The default is created once and reused
- * across requests.
+ * default built from `connectionString` (the caller resolves this from
+ * `ctx.runtime.getEnv('SUPABASE_DB_URL')`, so the lookup is portable and
+ * testable rather than reaching for a global). The default is created once and
+ * reused across requests.
  */
-export function getPool(override?: Pool): Pool {
+export function getPool(override?: Pool, connectionString?: string): Pool {
   if (override) return override
-  defaultPool ??= new Pool({ connectionString: dbUrl() })
+  defaultPool ??= new Pool({ connectionString })
   return defaultPool
 }
 

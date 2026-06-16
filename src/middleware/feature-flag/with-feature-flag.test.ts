@@ -111,4 +111,16 @@ describe('withFeatureFlag', () => {
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ variant: 'a' })
   })
+
+  it('self-seeds ctx.runtime when invoked as a bare fetch entry', async () => {
+    const handler = withFeatureFlag(
+      { name: 'beta', evaluate: () => true },
+      async (_req, ctx) => Response.json({ host: ctx.runtime.name }),
+    )
+
+    // Called directly, the way a runtime invokes `export default { fetch }`.
+    const res = await handler(new Request('http://localhost/'))
+    // Detected at module load; this suite runs on Node.
+    expect(await res.json()).toEqual({ host: 'node' })
+  })
 })

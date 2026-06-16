@@ -19,7 +19,7 @@
 
 import type { Pool } from 'pg'
 
-import { defineMiddleware } from '../../core/index.js'
+import { defineMiddleware, type BaseContext } from '../../core/index.js'
 import type { JWTClaims } from '../../types.js'
 
 import { type Db, type Role, getPool, authedDb, adminDb } from './db.js'
@@ -78,7 +78,7 @@ const postgresMiddleware = defineMiddleware<
 >({
   key: 'postgres',
   run: (config) => async (_req, ctx) => {
-    const pool = getPool(config.pool)
+    const pool = getPool(config.pool, ctx.runtime.getEnv('SUPABASE_DB_URL'))
     const claims = ctx.jwtClaims ?? { role: 'anon' }
     const postgres: { db: Db; adminDb?: Db } = {
       db: authedDb(pool, claims, userRole(ctx.jwtClaims)),
@@ -119,14 +119,16 @@ const postgresMiddleware = defineMiddleware<
  */
 export function withPostgres<
   const Cfg extends PostgresConfig,
-  Base extends { jwtClaims: JWTClaims | null },
+  Base extends { jwtClaims: JWTClaims | null } & BaseContext = {
+    jwtClaims: JWTClaims | null
+  } & BaseContext,
 >(
   config: Cfg,
   handler: (
     req: Request,
     ctx: Base & { postgres: Postgres<Cfg> },
   ) => Promise<Response>,
-): (req: Request, baseCtx: Base) => Promise<Response> {
+): (req: Request, ctx: Base) => Promise<Response> {
   // `postgresMiddleware` is typed with the widened `Postgres` (no `adminDb`);
   // the public signature above narrows it per-config. Bridge the two with one
   // cast.

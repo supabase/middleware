@@ -11,7 +11,11 @@
  * @packageDocumentation
  */
 
-import { defineMiddleware, type Conflict } from '../../core/index.js'
+import {
+  defineMiddleware,
+  type BaseContext,
+  type Conflict,
+} from '../../core/index.js'
 
 import type { AuthHookPayload } from './types.js'
 import { verifyStandardWebhook } from './verify.js'
@@ -131,15 +135,14 @@ type NoAuthHookConflict<Base> =
 export interface WithAuthHook {
   <
     Payload = AuthHookPayload,
-    Base extends NoAuthHookConflict<Base> = Record<never, never>,
+    Base extends BaseContext & NoAuthHookConflict<Base> = BaseContext,
   >(
     config: WithAuthHookConfig,
     handler: (
       req: Request,
       ctx: Base & { authHook: AuthHookContribution<Payload> },
     ) => Promise<Response>,
-  ): ((req: Request, baseCtx: Base) => Promise<Response>) &
-    ((req: Request) => Promise<Response>)
+  ): (req: Request, ctx?: Base) => Promise<Response>
 }
 
 /**
@@ -151,7 +154,7 @@ export interface WithAuthHook {
  *
  * export default {
  *   fetch: withAuthHook<SendEmailHookPayload>(
- *     { secret: process.env.SEND_EMAIL_HOOK_SECRET! },
+ *     { secret: Deno.env.get('SEND_EMAIL_HOOK_SECRET')! },
  *     async (_req, ctx) => {
  *       const { user, email_data } = ctx.authHook.payload
  *       // ...send the email with your provider...

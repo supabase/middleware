@@ -19,12 +19,19 @@
 import { Pool } from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
+import type { BaseContext } from '../../core/index.js'
 import type { JWTClaims } from '../../types.js'
 
 import { withPostgres } from './with-postgres.js'
 
 const DB_URL =
   typeof process !== 'undefined' ? process.env.SUPABASE_DB_URL : undefined
+
+/** Stand-in runtime facet — seeded automatically at the entry call in production. */
+const runtime: BaseContext['runtime'] = {
+  name: 'node',
+  getEnv: (k) => (k === 'SUPABASE_DB_URL' ? DB_URL : undefined),
+}
 
 const USER_A = '11111111-1111-1111-1111-111111111111'
 const USER_B = '22222222-2222-2222-2222-222222222222'
@@ -59,8 +66,8 @@ const SETUP_SQL = `
 const TEARDOWN_SQL = `drop table if exists pg_mw_notes;`
 
 /** Build a minimal authenticated-user upstream ctx. */
-function authedCtx(sub: string): { jwtClaims: JWTClaims } {
-  return { jwtClaims: { sub, role: 'authenticated' } }
+function authedCtx(sub: string): { jwtClaims: JWTClaims } & BaseContext {
+  return { jwtClaims: { sub, role: 'authenticated' }, runtime }
 }
 
 const req = (): Request => new Request('http://localhost/')
@@ -140,7 +147,7 @@ describe.skipIf(!DB_URL)('postgres middleware (integration)', () => {
       return Response.json({ n: r.rows[0].n })
     })
 
-    const res = await handler(req(), { jwtClaims: null })
+    const res = await handler(req(), { jwtClaims: null, runtime })
     expect(await res.json()).toEqual({ n: 3 })
   })
 
@@ -152,7 +159,7 @@ describe.skipIf(!DB_URL)('postgres middleware (integration)', () => {
       return Response.json({ n: r.rows[0].n })
     })
 
-    const res = await handler(req(), { jwtClaims: null })
+    const res = await handler(req(), { jwtClaims: null, runtime })
     expect(await res.json()).toEqual({ n: 0 })
   })
 

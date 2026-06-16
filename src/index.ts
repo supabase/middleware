@@ -14,5 +14,12 @@
 
 export { defineMiddleware } from './core/define-middleware.js'
 export type { Middleware } from './core/define-middleware.js'
+export type {
+  BaseContext,
+  FetchHandler,
+  Handler,
+  Runtime,
+  RuntimeName,
+} from './core/runtime.js'
 export type { Conflict } from './core/types.js'
 export type { JWTClaims } from './types.js'

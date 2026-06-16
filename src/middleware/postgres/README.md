@@ -29,7 +29,11 @@ from your own auth layer. The smallest possible upstream is a middleware that de
 token and contributes the claims:
 
 ```ts
-import { defineMiddleware, type JWTClaims } from '@supabase/web-middleware'
+import {
+  defineMiddleware,
+  type FetchHandler,
+  type JWTClaims,
+} from '@supabase/web-middleware'
 import { withPostgres } from '@supabase/web-middleware/postgres'
 
 // Your auth layer — decode/verify however you like, then contribute jwtClaims.
@@ -47,7 +51,8 @@ export default {
   fetch: withAuth(
     { verify: async (req) => decodeSupabaseJwt(req) },
     withPostgres({ admin: true }, async (_req, ctx) => {
-      // auth.uid() = ctx.jwtClaims.sub
+      // auth.uid() = ctx.jwtClaims.sub; connection string resolved from
+      // ctx.runtime.getEnv('SUPABASE_DB_URL') when no pool is passed.
       const mine = await ctx.postgres.db.query('select * from notes')
       const all = await ctx.postgres.adminDb.query('select count(*) from notes')
 
@@ -59,7 +64,7 @@ export default {
 
       return Response.json({ mine: mine.rows, total: all.rows[0].count })
     }),
-  ),
+  ) satisfies FetchHandler,
 }
 ```
 
