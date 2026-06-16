@@ -25,10 +25,10 @@ pnpm add @supabase/web-middleware
 
 ## What's in the box
 
-| Import                                  | What it does                                                                                                                   |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `@supabase/web-middleware`              | The `defineMiddleware` primitive, `withCatch` / `withResponse` + `Runtime` / `FetchHandler` / `Middleware` / `Conflict` types. |
-| `@supabase/web-middleware/feature-flag` | Provider-agnostic feature flag — admit or short-circuit per request.                                                           |
+| Import                                  | What it does                                                                                     |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `@supabase/web-middleware`              | The `defineMiddleware` primitive + `Runtime` / `FetchHandler` / `Middleware` / `Conflict` types. |
+| `@supabase/web-middleware/feature-flag` | Provider-agnostic feature flag — admit or short-circuit per request.                             |
 
 ## How it composes
 
@@ -77,12 +77,12 @@ Supported entry signatures are **`(request)`** and **`(request, env)`**. A third
 
 A middleware here runs **before** the handler and never observes or wraps the handler's `Response`. This is the deliberate difference from Express/Koa's onion model: there's no `next()`, no on-the-way-out response mutation.
 
-For the response side, two opt-in wrappers keep that concern under one owner instead of scattering it across middleware:
+So **response-side concerns live in the handler (or a complete middleware), not in framework wrappers.** Each is a plain `Response` operation you already know:
 
-- **`withCatch(onError, handler)`** — contain a thrown error behind a `Response` you define.
-- **`withResponse(transform, handler)`** — map the final `Response` (CORS/security headers, envelopes, status). Generic; CORS headers are just one `transform`. The preflight half is a normal request-side middleware that short-circuits on `OPTIONS`, so CORS is expressible end to end.
+- **Errors** — `try/catch` in your handler, or `.catch()` on the entry: `export default { fetch: (req) => stack(req).catch(onError) }`.
+- **Response headers / envelopes (CORS, security headers)** — return the shaped `Response` from your handler, or map it: `(req) => stack(req).then(addHeaders)`. CORS preflight is a request-side `OPTIONS` short-circuit (a normal middleware).
 
-Both are transparent to the call signature, so the result stays a `fetch` entry and they compose: `withCatch(onError, withResponse(addCors, stack))`.
+These are one-liners over a `Promise<Response>`; the substrate stays focused on request-side composition rather than shipping wrappers for them.
 
 ## Docs
 

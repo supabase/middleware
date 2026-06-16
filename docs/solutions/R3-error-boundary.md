@@ -1,5 +1,11 @@
 # R3 — Error containment
 
+> **⚠️ Superseded.** The `withCatch(onError, handler)` wrapper described below was
+> **removed**. It was a near-empty `.catch()` decorator with no composition machinery;
+> a complete handler/middleware owns its own errors. Use `try/catch` in the handler,
+> or `stack(req).catch(onError)` at the entry. Kept as the record of why a built-in
+> boundary was considered.
+
 See [`API_RISK_PROFILE.md`](../../API_RISK_PROFILE.md) → R3.
 
 ## The problem

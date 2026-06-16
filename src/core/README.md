@@ -78,7 +78,6 @@ export default {
 | Export                                      | Description                                                                                   |
 | ------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | `defineMiddleware(spec)`                    | Author helper: declare a middleware. Returns a `(config, handler)` callable.                  |
-| `withCatch(onError, handler)`               | Opt-in error boundary: contains downstream throws behind a `Response` you define.             |
 | `FetchHandler`                              | Type-only anchor (`… satisfies FetchHandler`) for ambient accumulation + collision detection. |
 | `Conflict<Key>`                             | Sentinel string a middleware's `ctx` resolves to when it would shadow an upstream key.        |
 | `Middleware<Key, Config, In, Contribution>` | The shape of a middleware produced by `defineMiddleware`.                                     |

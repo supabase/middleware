@@ -13,22 +13,24 @@ Status key: 🟥 needs work · 🟩 resolved · 🟦 by design · 🟪 owned by 
 
 ---
 
-## 1. Universal response-shaping (CORS, headers) — 🟩 resolved
+## 1 & 3. Response-shaping (CORS, headers) and error containment — 🟩 resolved (out of scope)
 
-Was: request-side-only meant CORS / response headers / envelopes couldn't be
-expressed; `withCatch` only covered errors.
+Was: request-side-only meant CORS / response headers / envelopes / error boundaries
+couldn't be expressed _as middleware_. We briefly shipped `withResponse` and
+`withCatch` wrappers — then **removed both**.
 
-**Disposition (done): a _universal_ response seam, not a Supabase-specific CORS
-wrapper.** Shipped `withResponse(transform, handler)` (`with-response.ts`, package
-root): a transparent outer wrapper that maps the final `Response`. CORS is just one
-`transform`; the preflight half is a normal request-side middleware that
-short-circuits on `OPTIONS`, so CORS is expressible end to end (tested). It composes
-with `withCatch` and stays a `fetch` entry. It deliberately maps only the final
-response — no per-middleware response access (no onion model).
+**Disposition: not the substrate's job.** Those wrappers were near-empty
+`Promise<Response>` decorators (`.then` / `.catch`) with no composition machinery — if
+you write a complete middleware/handler, it owns its own errors and response shape, so
+the wrappers are extraneous. The substrate stays focused on request-side composition:
 
-Possible follow-up (not blocking): a richer `finalize(res, ctx)` channel if a use case
-needs response shaping that depends on a middleware's own `ctx` (e.g. timing using a
-contributed start-time). Not built — `withResponse` covers the known cases.
+- **Errors** → `try/catch` in the handler, or `stack(req).catch(onError)` at the entry.
+- **Response headers / envelopes (CORS, …)** → return the shaped `Response`, or
+  `stack(req).then(transform)`; CORS preflight is a request-side `OPTIONS` short-circuit.
+
+Documented in the README's "Request-side only" section. (A richer `finalize(res, ctx)`
+channel that exposes a middleware's `ctx` on the way out remains conceivable, but it
+edges toward the onion model the design excludes — not built.)
 
 ## 6. `bufferRequest` proxy sharp edges — 🟩 resolved (one documented limit)
 
@@ -121,5 +123,5 @@ contributes it.
 last non-generic thing in the substrate. It has been **removed from web-middleware and
 moved to `@supabase/server/postgres`** (built on web-middleware's `defineMiddleware`,
 isolated subpath with `pg` as an optional peer). web-middleware now ships only the
-generic substrate: `defineMiddleware`, `withCatch`, `withResponse`, the `Runtime`
-facet, and `feature-flag` (the worked example).
+generic substrate: `defineMiddleware`, the `Runtime` facet (`ctx._runtime`), the
+buffered request, and `feature-flag` (the worked example).
