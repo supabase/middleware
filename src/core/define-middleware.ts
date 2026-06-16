@@ -77,37 +77,47 @@ export function defineMiddleware<
     ctx: In & BaseContext,
   ) => Promise<Response | { [K in Key]: Contribution }>
 }): Middleware<Key, Config, In, Contribution> {
-  return ((config: Config, handler: never) => {
-    const inner = spec.run(config)
-    return async (req: Request, maybeCtx?: object, ...rest: unknown[]) => {
-      // A parent middleware passes a real context; the host passes a platform
-      // value (env / connection info) in the same slot. Seed when it's the latter
-      // so platform arguments never reach `ctx`.
-      const upstream: BaseContext = isContext(maybeCtx)
-        ? maybeCtx
-        : seedContext(req, [maybeCtx, ...rest])
-      const result = await inner(req, upstream as In & BaseContext)
-      if (result instanceof Response) return result
-      // Defensive: catches authoring bugs the type system can't, e.g. a typo in
-      // the returned key that slipped past excess-property checks.
-      if (
-        result === null ||
-        typeof result !== 'object' ||
-        !(spec.key in result)
-      ) {
-        throw new Error(
-          `defineMiddleware '${spec.key}': run() returned an object missing the key '${spec.key}'`,
-        )
+  // `run` always contributes under `spec.key`; `targetKey` is where the value is
+  // merged onto `ctx`. They differ only after `.as(newKey)` re-keys the
+  // middleware, which is what lets the same middleware be applied more than once.
+  const make = (targetKey: string) => {
+    const callable = (config: Config, handler: never) => {
+      const inner = spec.run(config)
+      return async (req: Request, maybeCtx?: object, ...rest: unknown[]) => {
+        // A parent middleware passes a real context; the host passes a platform
+        // value (env / connection info) in the same slot. Seed when it's the
+        // latter so platform arguments never reach `ctx`.
+        const upstream: BaseContext = isContext(maybeCtx)
+          ? maybeCtx
+          : seedContext(req, [maybeCtx, ...rest])
+        const result = await inner(req, upstream as In & BaseContext)
+        if (result instanceof Response) return result
+        // Defensive: catches authoring bugs the type system can't, e.g. a typo
+        // in the returned key that slipped past excess-property checks.
+        if (
+          result === null ||
+          typeof result !== 'object' ||
+          !(spec.key in result)
+        ) {
+          throw new Error(
+            `defineMiddleware '${spec.key}': run() returned an object missing the key '${spec.key}'`,
+          )
+        }
+        const ctx = {
+          ...upstream,
+          [targetKey]: (result as Record<string, unknown>)[spec.key],
+        }
+        return (
+          handler as unknown as (req: Request, ctx: object) => Promise<Response>
+        )(req, ctx)
       }
-      const ctx = {
-        ...upstream,
-        [spec.key]: (result as Record<string, unknown>)[spec.key],
-      }
-      return (
-        handler as unknown as (req: Request, ctx: object) => Promise<Response>
-      )(req, ctx)
     }
-  }) as Middleware<Key, Config, In, Contribution>
+    // Re-key: same config/run/prerequisites, contributed under a different key.
+    ;(callable as { as?: (key: string) => unknown }).as = (newKey: string) =>
+      make(newKey)
+    return callable
+  }
+  return make(spec.key) as unknown as Middleware<Key, Config, In, Contribution>
 }
 
 /**
@@ -163,4 +173,19 @@ export interface Middleware<
       ctx: Base & { [K in Key]: Contribution },
     ) => Promise<Response>,
   ): Produced<Base, In>
+
+  /**
+   * Re-key this middleware so its contribution lands at `ctx[newKey]` instead of
+   * `ctx[Key]`. This is how the same middleware is applied more than once in a
+   * stack without a collision — e.g. gating on two feature flags:
+   *
+   * ```ts
+   * withFeatureFlag({ name: 'alpha', evaluate }, // -> ctx.featureFlag
+   *   withFeatureFlag.as('beta')({ name: 'beta', evaluate }, // -> ctx.beta
+   *     handler))
+   * ```
+   */
+  as<NewKey extends string>(
+    key: NewKey,
+  ): Middleware<NewKey, Config, In, Contribution>
 }
