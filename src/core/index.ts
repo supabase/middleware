@@ -6,7 +6,7 @@
  * Middleware compose by direct nesting: each `withFoo(config, handler)` produces
  * a single `(req, ctx) => Response` function. The outermost is used directly as
  * the runtime's `fetch` handler — there is no entry wrapper. It detects a
- * host-supplied platform argument vs. an upstream context and seeds `ctx.runtime`
+ * host-supplied platform argument vs. an upstream context and seeds `ctx._runtime`
  * itself. Optionally annotate the outermost with `satisfies FetchHandler` to make
  * the innermost handler see every upstream key ambiently.
  *
@@ -20,7 +20,6 @@ export { rejection } from './reject.js'
 export type { RejectConfig } from './reject.js'
 export type {
   BaseContext,
-  BufferedBody,
   FetchHandler,
   Handler,
   Runtime,

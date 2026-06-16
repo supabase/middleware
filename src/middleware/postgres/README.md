@@ -70,7 +70,7 @@ export default {
     { verify: async (req) => decodeSupabaseJwt(req) },
     withPostgres({ admin: true }, async (_req, ctx) => {
       // auth.uid() = ctx.jwtClaims.sub; connection string resolved from
-      // ctx.runtime.getEnv('SUPABASE_DB_URL') when no pool is passed.
+      // ctx._runtime.getEnv('SUPABASE_DB_URL') when no pool is passed.
       const mine = await ctx.postgres.db.query('select * from notes')
       const all = await ctx.postgres.adminDb.query('select count(*) from notes')
 

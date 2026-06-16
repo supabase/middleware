@@ -1,6 +1,6 @@
 import type { Conflict } from './types.js'
 import type { BaseContext } from './runtime.js'
-import { isContext, seedContext } from './runtime.js'
+import { bufferRequest, isContext, seedContext } from './runtime.js'
 
 /**
  * Defines a middleware.
@@ -21,14 +21,14 @@ import { isContext, seedContext } from './runtime.js'
  * handler with no wrapper** — `export default { fetch: withFoo(config, handler) }`.
  * When the host invokes it, the second argument is a platform value (a Workers
  * `env`, a Deno `ServeHandlerInfo`), not an upstream context; the wrapper detects
- * this via {@link isContext} and seeds a fresh `{ runtime }` instead of merging
+ * this via {@link isContext} and seeds a fresh `{ _runtime }` instead of merging
  * it, so platform arguments never leak into `ctx`.
  *
  * Typing:
  *
  * - **Prerequisite-free middleware are entry-able.** Their produced handler has
  *   an optional `ctx`, so it satisfies a bare `(req) => Response` fetch entry and
- *   self-seeds `ctx.runtime`.
+ *   self-seeds `ctx._runtime`.
  * - **Middleware with `In` prerequisites require `ctx`.** They can only be nested
  *   inside a wrapper that supplies those keys — never a bare entry — which keeps
  *   the prerequisite from being a type-lie at the top level.
@@ -85,12 +85,19 @@ export function defineMiddleware<
       const inner = spec.run(config)
       return async (req: Request, maybeCtx?: object, ...rest: unknown[]) => {
         // A parent middleware passes a real context; the host passes a platform
-        // value (env / connection info) in the same slot. Seed when it's the
-        // latter so platform arguments never reach `ctx`.
-        const upstream: BaseContext = isContext(maybeCtx)
-          ? maybeCtx
-          : seedContext(req, [maybeCtx, ...rest])
-        const result = await inner(req, upstream as In & BaseContext)
+        // value (env / connection info) in the same slot. At the entry (the
+        // latter), seed a fresh context so platform arguments never reach `ctx`,
+        // and wrap the request so its body is re-readable across the stack. Inner
+        // layers receive the already-buffered request and the seeded context.
+        let workingReq = req
+        let upstream: BaseContext
+        if (isContext(maybeCtx)) {
+          upstream = maybeCtx
+        } else {
+          workingReq = req.body ? bufferRequest(req) : req
+          upstream = seedContext([maybeCtx, ...rest])
+        }
+        const result = await inner(workingReq, upstream as In & BaseContext)
         if (result instanceof Response) return result
         // Defensive: catches authoring bugs the type system can't, e.g. a typo
         // in the returned key that slipped past excess-property checks.
@@ -109,7 +116,7 @@ export function defineMiddleware<
         }
         return (
           handler as unknown as (req: Request, ctx: object) => Promise<Response>
-        )(req, ctx)
+        )(workingReq, ctx)
       }
     }
     // Re-key: same config/run/prerequisites, contributed under a different key.
@@ -146,7 +153,7 @@ export type NoConflict<Key extends string, Base> =
  * The produced handler shape.
  *
  * - **No prerequisites** (`In` empty): `ctx` is optional, so the handler is
- *   directly usable as a runtime `fetch` entry and self-seeds `ctx.runtime`.
+ *   directly usable as a runtime `fetch` entry and self-seeds `ctx._runtime`.
  * - **With prerequisites**: `ctx` is required, so the middleware must be nested
  *   inside a wrapper that provides those keys.
  *

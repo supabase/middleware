@@ -7,17 +7,11 @@ import type { BaseContext, FetchHandler } from './runtime.js'
 const innerOk = async () => Response.json({ ok: true })
 
 /** Stand-in base context for tests that supply a context directly. */
-const runtime: BaseContext['runtime'] = {
+const runtime: BaseContext['_runtime'] = {
   name: 'node',
   getEnv: () => undefined,
 }
-const body: BaseContext['body'] = {
-  arrayBuffer: async () => new ArrayBuffer(0),
-  bytes: async () => new Uint8Array(),
-  text: async () => '',
-  json: async () => ({}) as never,
-}
-const base: BaseContext = { runtime, body }
+const base: BaseContext = { _runtime: runtime }
 
 const passing = <Key extends string, C extends object>(
   key: Key,
@@ -35,7 +29,7 @@ const rejecting = <Key extends string>(key: Key, status = 401) =>
   })
 
 describe('defineMiddleware', () => {
-  it('runs the middleware, contributes its key, and self-seeds ctx.runtime', async () => {
+  it('runs the middleware, contributes its key, and self-seeds ctx._runtime', async () => {
     const withGreeting = defineMiddleware<
       'greeting',
       { who: string },
@@ -47,7 +41,7 @@ describe('defineMiddleware', () => {
     })
 
     const fetchHandler = withGreeting({ who: 'world' }, async (_req, ctx) =>
-      Response.json({ msg: ctx.greeting.hello, host: ctx.runtime.name }),
+      Response.json({ msg: ctx.greeting.hello, host: ctx._runtime.name }),
     )
 
     // Invoked as a bare fetch entry — ctx is seeded internally.
@@ -74,12 +68,12 @@ describe('defineMiddleware', () => {
     const res = await (
       fetchHandler as (req: Request, ...a: unknown[]) => Promise<Response>
     )(new Request('http://localhost/'), { SECRET: 's' }, { waitUntil() {} })
-    expect(await res.json()).toEqual({ keys: ['runtime', 'body', 'greeting'] })
+    expect(await res.json()).toEqual({ keys: ['_runtime', 'greeting'] })
   })
 
-  it('ctx.body is readable from multiple layers (read-once-cache)', async () => {
+  it('req body is readable from multiple layers (buffered request)', async () => {
     // A body-reading middleware (models auth-hook) followed by a handler that
-    // also reads the body — both succeed, no "Body already consumed".
+    // also reads the body — both read `req` directly, no "Body already consumed".
     const withReader = defineMiddleware<
       'reader',
       undefined,
@@ -87,13 +81,15 @@ describe('defineMiddleware', () => {
       { len: number }
     >({
       key: 'reader',
-      run: () => async (_req, ctx) => ({
-        reader: { len: (await ctx.body.text()).length },
+      run: () => async (req) => ({
+        reader: { len: (await req.text()).length },
       }),
     })
 
-    const fetchHandler = withReader(undefined, async (_req, ctx) => {
-      const parsed = await ctx.body.json<{ hello: string }>()
+    const fetchHandler = withReader(undefined, async (req, ctx) => {
+      const parsed = (await req.json()) as { hello: string }
+      // ctx.reader.len is the length the middleware read; hello comes from the
+      // handler's own (second) read of the same body.
       return Response.json({ len: ctx.reader.len, hello: parsed.hello })
     })
 
@@ -249,7 +245,7 @@ describe('type guarantees (tsc-verified)', () => {
       withB(undefined, async (_req, ctx) => {
         const a: number = ctx.alpha.v
         const b: number = ctx.beta.v
-        const host: string = ctx.runtime.name
+        const host: string = ctx._runtime.name
         void a
         void b
         void host
@@ -316,7 +312,7 @@ describe('type guarantees (tsc-verified)', () => {
       { name: 'beta', evaluate: () => true },
       withStamp(undefined, async (_req, ctx) => {
         const at: number = ctx.stamp.at
-        const host: string = ctx.runtime.name
+        const host: string = ctx._runtime.name
         void at
         void host
         return Response.json({ ok: true })

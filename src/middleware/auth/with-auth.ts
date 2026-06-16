@@ -22,7 +22,7 @@ import { verifySupabaseJwt } from './verify-jwt.js'
 export interface WithAuthConfig {
   /**
    * The Supabase JWT secret (HS256). When omitted, it is read from
-   * `ctx.runtime.getEnv('SUPABASE_JWT_SECRET')` at request time.
+   * `ctx._runtime.getEnv('SUPABASE_JWT_SECRET')` at request time.
    */
   jwtSecret?: string
 
@@ -64,7 +64,7 @@ export const withAuth = defineMiddleware<
 >({
   key: 'jwtClaims',
   run: (config) => async (req, ctx) => {
-    const secret = config.jwtSecret ?? ctx.runtime.getEnv('SUPABASE_JWT_SECRET')
+    const secret = config.jwtSecret ?? ctx._runtime.getEnv('SUPABASE_JWT_SECRET')
     const token = req.headers.get('authorization')?.match(BEARER)?.[1]
     if (!secret || !token) return { jwtClaims: null }
     return {

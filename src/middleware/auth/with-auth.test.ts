@@ -92,20 +92,15 @@ describe('withAuth', () => {
     expect(await res.json()).toEqual({ sub: null, role: null })
   })
 
-  it('reads the secret from ctx.runtime.getEnv when jwtSecret is omitted', async () => {
+  it('reads the secret from ctx._runtime.getEnv when jwtSecret is omitted', async () => {
     const token = await signJwt(SECRET, { sub: 'env-user', exp: FUTURE })
     // No jwtSecret in config; supply a context whose runtime resolves it.
     const handler = probe({})
     const ctx = {
-      runtime: {
+      _runtime: {
         name: 'node' as const,
-        getEnv: (k: string) => (k === 'SUPABASE_JWT_SECRET' ? SECRET : undefined),
-      },
-      body: {
-        arrayBuffer: async () => new ArrayBuffer(0),
-        bytes: async () => new Uint8Array(),
-        text: async () => '',
-        json: async () => ({}) as never,
+        getEnv: (k: string) =>
+          k === 'SUPABASE_JWT_SECRET' ? SECRET : undefined,
       },
     }
     const res = await handler(bearer(token), ctx)

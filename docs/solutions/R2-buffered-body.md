@@ -16,45 +16,48 @@ passes the original `req` straight through, this meant:
 
 ## How it was solved
 
-A **read-once-cache** body view is now part of the base context at **`ctx.body`**
-(`src/core/runtime.ts`):
+The body is made re-readable on **`req` itself** — not via a `ctx` key. At the entry
+call, `defineMiddleware` wraps the request with `bufferRequest(req)`
+(`src/core/runtime.ts`): a `Proxy` whose body-consuming methods
+(`arrayBuffer` / `bytes` / `blob` / `text` / `json`) read the underlying body **at
+most once** and cache it; everything else (headers, url, method, signal, …) forwards
+to the real request, and `proxy instanceof Request` stays true. The buffered request
+is created once at the entry and flows down the stack, so the cache is shared.
+
+So body-reading is just normal Fetch — read it off `req`:
 
 ```ts
-export interface BufferedBody {
-  arrayBuffer(): Promise<ArrayBuffer>
-  bytes(): Promise<Uint8Array>
-  text(): Promise<string>
-  json<T = unknown>(): Promise<T>
+// auth-hook
+run: (config) => async (req) => {
+  const body = await req.text() // buffered: a downstream handler can read it too
+  // …verify signature over `body`…
 }
 ```
 
-- It reads the underlying body **at most once** (caching the `arrayBuffer` promise)
-  and derives `text` / `json` / `bytes` from that cache. Reading is lazy — a GET with
-  no body never triggers a read.
-- The body view is seeded once at the entry call (`seedContext(req, …)`) and flows by
-  reference through every middleware merge, so the **cache is shared** across the
-  whole stack. Any number of layers can read it, in any form.
+The handler can then `await req.json()` (or `.text()`, …) on the same `req` and get
+the cached bytes — no "Body already consumed".
 
-`auth-hook` now reads through `ctx.body.text()` instead of `req.text()`
-(`src/middleware/auth-hook/with-auth-hook.ts`), so a handler downstream of it can
-still read the body.
+### Why `req`, not `ctx.body`
 
-### The convention
-
-Body-reading middleware should read through **`ctx.body`**, never `req.text()` /
-`req.json()` directly. (Reading `req` directly still works, but consumes the stream
-for everyone — the same footgun as before.)
+The first cut put a `BufferedBody` at `ctx.body`. That introduced an asymmetry: every
+other `ctx` key is named after the middleware that set it, but `body` (like
+`_runtime`) was a framework-seeded top-level key. The body is a property of the
+**request**, so it belongs on `req`. Moving it there keeps the reserved-facet set on
+`ctx` down to just `_runtime`, and makes body-reading read like idiomatic Fetch.
 
 ## Verification
 
-`src/core/define-middleware.test.ts` → "ctx.body is readable from multiple layers":
-a body-reading middleware followed by a handler that reads the body again both
-succeed (previously the second read threw). `pnpm test` ✅ · `pnpm typecheck` ✅.
+`src/core/define-middleware.test.ts` → "req body is readable from multiple layers
+(buffered request)": a body-reading middleware followed by a handler that reads the
+body again both succeed (previously the second read threw). The auth-hook suite still
+passes reading via `req`. `pnpm test` ✅ · `pnpm typecheck` ✅.
 
 ## Scope / limits
 
-- The cache holds the full body in memory — fine for typical JSON/webhook payloads,
-  not for streaming large uploads. A middleware that genuinely needs the raw stream
-  can still read `req.body` directly (and accept that it consumes it).
-- The convention is advisory: nothing prevents a middleware from reading `req`
-  directly and consuming the stream. Enforcing that is out of scope.
+- The cache holds the full body in memory — fine for JSON/webhook payloads, not for
+  streaming large uploads. A middleware that needs the raw stream reads `req.body`
+  directly (and accepts single-consumption).
+- `req.formData()` and the raw `req.body` stream are **not** cached — only the four
+  buffering methods above. Bodyless requests (GET/HEAD) skip the proxy entirely.
+- The handler's `req` is a `Proxy` over the original, not the original instance
+  (identity check / `req.clone()` after a cached read are the known edges).

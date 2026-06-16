@@ -12,7 +12,7 @@ flagship RLS feature couldn't be used without the consumer hand-writing a
 JWT-verifying middleware, and the READMEs referenced a `withAuth` that didn't exist.
 
 (The lesser half of R8 — the implicit `SUPABASE_DB_URL` module pool — was already
-addressed when `withPostgres` switched to `ctx.runtime.getEnv`; see the prior
+addressed when `withPostgres` switched to `ctx._runtime.getEnv`; see the prior
 refactor.)
 
 ## How it was solved
@@ -26,7 +26,7 @@ A new subpath **`@supabase/web-middleware/auth`** ships `withAuth`, which contri
 - `src/middleware/auth/with-auth.ts` — `withAuth({ jwtSecret?, toleranceInSeconds? })`:
   reads `Authorization: Bearer <token>`, verifies it, contributes
   `ctx.jwtClaims: JWTClaims | null`. `jwtSecret` defaults to
-  `ctx.runtime.getEnv('SUPABASE_JWT_SECRET')`.
+  `ctx._runtime.getEnv('SUPABASE_JWT_SECRET')`.
 
 Composes directly:
 
@@ -49,7 +49,7 @@ Wired into `package.json` exports, `tsdown.config.ts`, and `jsr.json`.
 
 `src/middleware/auth/with-auth.test.ts`: valid token → claims; missing header,
 tampered signature, wrong secret, expired, and non-HS256 (`alg` confusion) all →
-`null`; secret resolved from `ctx.runtime.getEnv`. `pnpm test` ✅ · `pnpm typecheck`
+`null`; secret resolved from `ctx._runtime.getEnv`. `pnpm test` ✅ · `pnpm typecheck`
 ✅ · `pnpm build` emits `dist/middleware/auth`.
 
 ## Scope / limits
@@ -60,4 +60,4 @@ tampered signature, wrong secret, expired, and non-HS256 (`alg` confusion) all �
 - **Anon-by-default**, not `401`. Routes that must reject unauthenticated callers
   check `ctx.jwtClaims` themselves.
 - The implicit module-global pool in `withPostgres` still exists (now fed a
-  `ctx.runtime.getEnv`-resolved connection string) — acceptable, documented.
+  `ctx._runtime.getEnv`-resolved connection string) — acceptable, documented.

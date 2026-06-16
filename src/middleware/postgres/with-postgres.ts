@@ -78,7 +78,7 @@ const postgresMiddleware = defineMiddleware<
 >({
   key: 'postgres',
   run: (config) => async (_req, ctx) => {
-    const pool = getPool(config.pool, ctx.runtime.getEnv('SUPABASE_DB_URL'))
+    const pool = getPool(config.pool, ctx._runtime.getEnv('SUPABASE_DB_URL'))
     const claims = ctx.jwtClaims ?? { role: 'anon' }
     const postgres: { db: Db; adminDb?: Db } = {
       db: authedDb(pool, claims, userRole(ctx.jwtClaims)),

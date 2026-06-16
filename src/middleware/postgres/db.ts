@@ -45,7 +45,7 @@ let defaultPool: Pool | undefined
 /**
  * Resolve the pool to use: an explicit `override`, or a lazily-created module
  * default built from `connectionString` (the caller resolves this from
- * `ctx.runtime.getEnv('SUPABASE_DB_URL')`, so the lookup is portable and
+ * `ctx._runtime.getEnv('SUPABASE_DB_URL')`, so the lookup is portable and
  * testable rather than reaching for a global). The default is created once and
  * reused across requests.
  */

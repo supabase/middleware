@@ -17,7 +17,6 @@ export type { Middleware } from './core/define-middleware.js'
 export { withCatch } from './core/with-catch.js'
 export type {
   BaseContext,
-  BufferedBody,
   FetchHandler,
   Handler,
   Runtime,

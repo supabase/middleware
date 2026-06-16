@@ -46,7 +46,7 @@ renaming to `state` / `data` / `scope`, but **kept `ctx`**:
   absorbed at the entry, never surfaced — see R1).
 - Renaming is a breaking change to every handler signature for a purely cosmetic gain.
 
-The reserved `ctx.runtime` / `ctx.body` facets are documented; that's the disambiguation.
+The reserved `ctx._runtime` / `ctx.body` facets are documented; that's the disambiguation.
 
 ## Verification
 

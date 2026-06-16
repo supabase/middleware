@@ -64,7 +64,7 @@ describe('withCatch', () => {
     const handler = withCatch(
       () => new Response(null, { status: 500 }),
       withFlag({ explode: false }, async (_req, ctx) =>
-        Response.json({ host: ctx.runtime.name }),
+        Response.json({ host: ctx._runtime.name }),
       ),
     )
 

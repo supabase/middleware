@@ -4,16 +4,21 @@
  * Reading configuration differs per host — `Deno.env.get` on Deno, `process.env`
  * on Node/Bun, a per-request bindings object on Cloudflare Workers.
  * {@link Runtime} normalizes that to a single `getEnv(key)`, carried on every
- * context at `ctx.runtime`.
+ * context at `ctx._runtime`. The leading underscore marks it as the framework's
+ * one reserved base facet — distinct from the middleware-named keys
+ * (`ctx.featureFlag`, …) that share the rest of the namespace.
  *
  * There is **no entry wrapper**. A composed stack is used directly as the
  * runtime's `fetch` handler (`export default { fetch: withFoo(config, handler) }`).
  * When the host invokes the outermost handler, {@link defineMiddleware} detects
  * that the second argument is not an upstream context (via {@link isContext})
- * and seeds a fresh `{ runtime }` itself — so a host-supplied `env` /
+ * and seeds a fresh `{ _runtime }` itself — so a host-supplied `env` /
  * `ServeHandlerInfo` is never merged into `ctx`. The runtime *name* is detected
  * a single time at module load; per-request bindings (Workers `env`) are
  * captured from the entry call.
+ *
+ * The request body is made re-readable on `req` itself (see {@link bufferRequest})
+ * rather than via a `ctx` key, so the body stays a property of the request.
  *
  * @packageDocumentation
  */
@@ -27,7 +32,7 @@ export type RuntimeName =
   | 'unknown'
 
 /**
- * The portable runtime facet carried at `ctx.runtime`. `getEnv` resolves a
+ * The portable runtime facet carried at `ctx._runtime`. `getEnv` resolves a
  * configuration value the same way regardless of host, so middleware never
  * branch on `Deno` vs `process` vs a Workers bindings object.
  */
@@ -39,36 +44,15 @@ export interface Runtime {
 }
 
 /**
- * A read-once-cache view of the request body, carried at `ctx.body`.
- *
- * The Fetch `Request` body is a single-use stream — the first reader of `req`
- * locks out every later one. `ctx.body` reads the underlying body **at most
- * once** and caches the bytes, so any number of middleware and the handler can
- * each read it (in any form). Body-reading middleware should read through
- * `ctx.body`, never `req.text()` / `req.json()` directly.
- */
-export interface BufferedBody {
-  /** The raw body bytes, read once and cached. */
-  arrayBuffer(): Promise<ArrayBuffer>
-  /** The raw body bytes as a `Uint8Array`. */
-  bytes(): Promise<Uint8Array>
-  /** The body decoded as UTF-8 text. */
-  text(): Promise<string>
-  /** The body parsed as JSON. */
-  json<T = unknown>(): Promise<T>
-}
-
-/**
- * The lower bound of every context. The outermost middleware seeds it on the
- * entry call; each middleware widens it with its contributed key. Anchoring
- * composition to this base is what lets `Base` inference flow through nested
- * middleware — every produced handler is a single `(req, ctx)` signature.
+ * The lower bound of every context — the framework's single reserved facet. The
+ * outermost middleware seeds it on the entry call; each middleware widens the
+ * context with its own contributed key. Anchoring composition to this base is
+ * what lets `Base` inference flow through nested middleware (every produced
+ * handler is a single `(req, ctx)` signature).
  */
 export interface BaseContext {
-  /** Portable runtime facet — environment access + host name. */
-  readonly runtime: Runtime
-  /** Read-once-cache view of the request body — safe to read from many layers. */
-  readonly body: BufferedBody
+  /** Portable runtime facet — environment access + host name. Reserved key. */
+  readonly _runtime: Runtime
 }
 
 /** A composed handler: request + an accumulated context `>= BaseContext`. */
@@ -84,10 +68,7 @@ export type Handler<Ctx extends BaseContext = BaseContext> = (
  * ambiently. It is not needed for cross-middleware dependencies declared as `In`
  * prerequisites — those type without any annotation.
  */
-export type FetchHandler = (
-  req: Request,
-  ctx?: BaseContext,
-) => Promise<Response>
+export type FetchHandler = (req: Request, ctx?: BaseContext) => Promise<Response>
 
 /** Best-effort host detection. Deno is checked first because it also defines `navigator`. */
 function detectRuntimeName(): RuntimeName {
@@ -135,46 +116,74 @@ function makeGetEnv(
   }
 }
 
-/** Build the read-once-cache body view over a request. */
-function bufferedBody(req: Request): BufferedBody {
-  let buffer: Promise<ArrayBuffer> | undefined
-  const arrayBuffer = () => (buffer ??= req.arrayBuffer())
-  const text = async () => new TextDecoder().decode(await arrayBuffer())
-  return {
-    arrayBuffer,
-    bytes: async () => new Uint8Array(await arrayBuffer()),
-    text,
-    json: async <T = unknown>() => JSON.parse(await text()) as T,
-  }
-}
-
 /**
  * Seed a fresh base context for an entry call. `platformArgs` are the positional
  * arguments the host passed after `req` (a Workers `env`, a Deno
  * `ServeHandlerInfo`, …) — used only to source bindings, never merged into `ctx`.
- * The body view caches `req`'s body so every layer can read it.
  */
-export function seedContext(
-  req: Request,
-  platformArgs: readonly unknown[],
-): BaseContext {
-  return {
-    runtime: { name: RUNTIME_NAME, getEnv: makeGetEnv(platformArgs) },
-    body: bufferedBody(req),
-  }
+export function seedContext(platformArgs: readonly unknown[]): BaseContext {
+  return { _runtime: { name: RUNTIME_NAME, getEnv: makeGetEnv(platformArgs) } }
 }
 
 /**
  * Distinguish an upstream context (passed by a parent middleware) from a
  * host-supplied platform argument (an `env` / connection-info object the runtime
- * puts in the same positional slot). The `runtime` facet flows by reference
+ * puts in the same positional slot). The `_runtime` facet flows by reference
  * through every merge, so checking for it is reliable across the stack.
  */
 export function isContext(value: unknown): value is BaseContext {
   return (
     !!value &&
     typeof value === 'object' &&
-    typeof (value as { runtime?: { getEnv?: unknown } }).runtime?.getEnv ===
+    typeof (value as { _runtime?: { getEnv?: unknown } })._runtime?.getEnv ===
       'function'
   )
+}
+
+/** Body-consuming `Request` methods that the buffered proxy re-implements with a cache. */
+const BUFFERED_METHODS = new Set([
+  'arrayBuffer',
+  'bytes',
+  'blob',
+  'text',
+  'json',
+])
+
+/**
+ * Wrap a `Request` so its body can be read more than once.
+ *
+ * A Fetch `Request` body is a single-use stream — the first reader of
+ * `req.text()` / `req.json()` / … locks out every later one. This returns a
+ * proxy that reads the underlying body **at most once** and caches the bytes, so
+ * a body-verifying middleware (`auth-hook`) and the handler can each read it.
+ * Everything else (headers, url, method, signal, …) forwards to the real
+ * request, and `proxy instanceof Request` stays true.
+ *
+ * The proxy is created once at the entry call and flows down the stack, so the
+ * cache is shared. Reading `req.body` (the raw stream) or `req.formData()`
+ * directly still bypasses the cache — those are not buffered.
+ */
+export function bufferRequest(req: Request): Request {
+  let buffer: Promise<ArrayBuffer> | undefined
+  const arrayBuffer = (): Promise<ArrayBuffer> => (buffer ??= req.arrayBuffer())
+  const text = async (): Promise<string> =>
+    new TextDecoder().decode(await arrayBuffer())
+  const cached: Record<string, () => Promise<unknown>> = {
+    arrayBuffer,
+    text,
+    json: async () => JSON.parse(await text()) as unknown,
+    bytes: async () => new Uint8Array(await arrayBuffer()),
+    blob: async () => new Blob([await arrayBuffer()]),
+  }
+  return new Proxy(req, {
+    get(target, prop) {
+      if (typeof prop === 'string' && BUFFERED_METHODS.has(prop)) {
+        return cached[prop]
+      }
+      // Read with receiver = target so native accessors (headers, url, …) run
+      // against the real request's internal slots, and bind methods to it.
+      const value = Reflect.get(target, prop, target)
+      return typeof value === 'function' ? value.bind(target) : value
+    },
+  })
 }

@@ -4,7 +4,7 @@ Composable, type-safe middleware for Web Fetch handlers.
 
 A **middleware** is a `(config, handler)` wrapper — `withFoo(config, handler)` — that runs against the inbound `Request`, contributes a typed key to `ctx`, and either short-circuits with a `Response` or falls through to the inner handler. Stack them by direct nesting; the innermost handler sees a flat `ctx` aggregated from every wrapper around it. No registry, no `app.use()`, no separate composer.
 
-Each `withFoo(config, handler)` produces a single `(req, ctx) => Response` function, and **the outermost one is the `fetch` handler directly** — no wrapper. When the runtime invokes it, the middleware detects that the host's second argument is a platform value (Deno's connection info, a Workers `env`) rather than an upstream context and seeds `ctx.runtime` itself, so platform arguments never leak into `ctx`. The runtime is detected once, at module load. Because everything is plain Web Fetch, the same stack runs unchanged across Deno, Cloudflare Workers, Bun, and Node.
+Each `withFoo(config, handler)` produces a single `(req, ctx) => Response` function, and **the outermost one is the `fetch` handler directly** — no wrapper. When the runtime invokes it, the middleware detects that the host's second argument is a platform value (Deno's connection info, a Workers `env`) rather than an upstream context and seeds `ctx._runtime` itself, so platform arguments never leak into `ctx`. The runtime is detected once, at module load. Because everything is plain Web Fetch, the same stack runs unchanged across Deno, Cloudflare Workers, Bun, and Node.
 
 ```ts
 import { withFeatureFlag } from '@supabase/web-middleware/feature-flag'
@@ -48,7 +48,7 @@ export default {
     withAuthHook({ secret: 'whsec_…' }, async (_req, ctx) => {
       ctx.featureFlag // from withFeatureFlag
       ctx.authHook //   from withAuthHook
-      ctx.runtime //    seeded automatically — ctx.runtime.getEnv('…'), ctx.runtime.name
+      ctx._runtime //    seeded automatically — ctx._runtime.getEnv('…'), ctx._runtime.name
       return new Response(null, { status: 200 })
     }),
   ) satisfies FetchHandler,
@@ -62,11 +62,11 @@ Two type-level guarantees, with no runtime cost:
 
 ### Runtime & environment
 
-The framework seeds `ctx.runtime`, a portable facet middleware use instead of reaching for `Deno.env` / `process.env` / a Workers bindings object directly:
+The framework seeds `ctx._runtime`, a portable facet middleware use instead of reaching for `Deno.env` / `process.env` / a Workers bindings object directly:
 
 ```ts
-ctx.runtime.name // 'deno' | 'cloudflare-workers' | 'node' | 'bun' | 'unknown'
-ctx.runtime.getEnv('SUPABASE_DB_URL') // string | undefined, resolved per host
+ctx._runtime.name // 'deno' | 'cloudflare-workers' | 'node' | 'bun' | 'unknown'
+ctx._runtime.getEnv('SUPABASE_DB_URL') // string | undefined, resolved per host
 ```
 
 The host is detected once at module load. On Cloudflare Workers, `getEnv` reads the per-request bindings the runtime passes to `fetch`; elsewhere it reads the host's global (`Deno.env`, `process.env`).

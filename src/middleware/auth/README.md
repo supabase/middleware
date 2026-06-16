@@ -11,7 +11,7 @@ import { withPostgres } from '@supabase/web-middleware/postgres'
 
 export default {
   fetch: withAuth(
-    {}, // jwtSecret read from SUPABASE_JWT_SECRET via ctx.runtime.getEnv
+    {}, // jwtSecret read from SUPABASE_JWT_SECRET via ctx._runtime.getEnv
     withPostgres({}, async (_req, ctx) => {
       // RLS runs as ctx.jwtClaims.sub — or anon when the token is absent/invalid
       const mine = await ctx.postgres.db.query('select * from notes')
@@ -35,10 +35,10 @@ For `withPostgres`, RLS already enforces it: `null` claims run as the `anon` rol
 
 ## Config
 
-| Field                | Type      | Description                                                                                   |
-| -------------------- | --------- | --------------------------------------------------------------------------------------------- |
-| `jwtSecret`          | `string?` | The Supabase JWT secret (HS256). Omit to read `SUPABASE_JWT_SECRET` via `ctx.runtime.getEnv`. |
-| `toleranceInSeconds` | `number?` | Clock-skew tolerance applied to `exp` / `nbf`. Default `0`.                                   |
+| Field                | Type      | Description                                                                                    |
+| -------------------- | --------- | ---------------------------------------------------------------------------------------------- |
+| `jwtSecret`          | `string?` | The Supabase JWT secret (HS256). Omit to read `SUPABASE_JWT_SECRET` via `ctx._runtime.getEnv`. |
+| `toleranceInSeconds` | `number?` | Clock-skew tolerance applied to `exp` / `nbf`. Default `0`.                                    |
 
 ## Scope / limits
 
