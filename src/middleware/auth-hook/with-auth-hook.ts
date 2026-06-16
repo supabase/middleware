@@ -78,10 +78,11 @@ const authHookMiddleware = defineMiddleware<
   AuthHookContribution
 >({
   key: 'authHook',
-  run: (config) => async (req) => {
+  run: (config) => async (req, ctx) => {
     // Standard Webhooks signs the raw body, so read text (not json) and verify
-    // before parsing.
-    const body = await req.text()
+    // before parsing. Read through `ctx.body` (read-once-cache) rather than
+    // `req.text()`, so a downstream handler can still read the body too.
+    const body = await ctx.body.text()
     const result = await verifyStandardWebhook(
       config.secret,
       body,

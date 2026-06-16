@@ -32,7 +32,13 @@ Inside a wrapped handler, `ctx` is a flat intersection — the framework seeds `
 | Key                                                  | Set by                       | Mutability              |
 | ---------------------------------------------------- | ---------------------------- | ----------------------- |
 | `ctx.runtime` (`name`, `getEnv`)                     | seeded at the entry call     | read-only               |
+| `ctx.body` (read-once-cache body view)               | seeded at the entry call     | read-only               |
 | `ctx.<key>` (e.g. `ctx.featureFlag`, `ctx.postgres`) | the corresponding middleware | read-only by convention |
+
+> **Reading the body.** Read through `ctx.body` (`.text()` / `.json()` /
+> `.arrayBuffer()` / `.bytes()`), never `req.text()` directly. `ctx.body` caches the
+> bytes after the first read, so any number of middleware and the handler can each
+> read it. Reading `req` directly consumes the single-use stream for everyone else.
 
 Two type-level guarantees:
 

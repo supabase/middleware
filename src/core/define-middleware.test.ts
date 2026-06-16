@@ -6,11 +6,18 @@ import type { BaseContext, FetchHandler } from './runtime.js'
 
 const innerOk = async () => Response.json({ ok: true })
 
-/** A stand-in runtime facet for tests that supply a context directly. */
+/** Stand-in base context for tests that supply a context directly. */
 const runtime: BaseContext['runtime'] = {
   name: 'node',
   getEnv: () => undefined,
 }
+const body: BaseContext['body'] = {
+  arrayBuffer: async () => new ArrayBuffer(0),
+  bytes: async () => new Uint8Array(),
+  text: async () => '',
+  json: async () => ({}) as never,
+}
+const base: BaseContext = { runtime, body }
 
 const passing = <Key extends string, C extends object>(
   key: Key,
@@ -67,7 +74,37 @@ describe('defineMiddleware', () => {
     const res = await (
       fetchHandler as (req: Request, ...a: unknown[]) => Promise<Response>
     )(new Request('http://localhost/'), { SECRET: 's' }, { waitUntil() {} })
-    expect(await res.json()).toEqual({ keys: ['runtime', 'greeting'] })
+    expect(await res.json()).toEqual({ keys: ['runtime', 'body', 'greeting'] })
+  })
+
+  it('ctx.body is readable from multiple layers (read-once-cache)', async () => {
+    // A body-reading middleware (models auth-hook) followed by a handler that
+    // also reads the body — both succeed, no "Body already consumed".
+    const withReader = defineMiddleware<
+      'reader',
+      undefined,
+      Record<never, never>,
+      { len: number }
+    >({
+      key: 'reader',
+      run: () => async (_req, ctx) => ({
+        reader: { len: (await ctx.body.text()).length },
+      }),
+    })
+
+    const fetchHandler = withReader(undefined, async (_req, ctx) => {
+      const parsed = await ctx.body.json<{ hello: string }>()
+      return Response.json({ len: ctx.reader.len, hello: parsed.hello })
+    })
+
+    const res = await fetchHandler(
+      new Request('http://localhost/', {
+        method: 'POST',
+        body: JSON.stringify({ hello: 'world' }),
+      }),
+    )
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ len: 17, hello: 'world' })
   })
 
   it('short-circuits on reject without calling the inner handler', async () => {
@@ -104,7 +141,7 @@ describe('defineMiddleware', () => {
     const fakeUpstream: Upstream & BaseContext = {
       db: { from: () => ({ ok: true }) },
       jwtClaims: { sub: 'u1' },
-      runtime,
+      ...base,
     }
 
     const fetchHandler = withReportAccess(
@@ -150,14 +187,14 @@ describe('defineMiddleware', () => {
 
     const blocked = await fetchHandler(new Request('http://localhost/'), {
       tenantId: 'evil-corp',
-      runtime,
+      ...base,
     })
     expect(blocked.status).toBe(403)
     expect(inner).not.toHaveBeenCalled()
 
     const ok = await fetchHandler(new Request('http://localhost/'), {
       tenantId: 'acme',
-      runtime,
+      ...base,
     })
     expect(ok.status).toBe(200)
     expect(inner).toHaveBeenCalledOnce()

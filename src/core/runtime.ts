@@ -39,6 +39,26 @@ export interface Runtime {
 }
 
 /**
+ * A read-once-cache view of the request body, carried at `ctx.body`.
+ *
+ * The Fetch `Request` body is a single-use stream — the first reader of `req`
+ * locks out every later one. `ctx.body` reads the underlying body **at most
+ * once** and caches the bytes, so any number of middleware and the handler can
+ * each read it (in any form). Body-reading middleware should read through
+ * `ctx.body`, never `req.text()` / `req.json()` directly.
+ */
+export interface BufferedBody {
+  /** The raw body bytes, read once and cached. */
+  arrayBuffer(): Promise<ArrayBuffer>
+  /** The raw body bytes as a `Uint8Array`. */
+  bytes(): Promise<Uint8Array>
+  /** The body decoded as UTF-8 text. */
+  text(): Promise<string>
+  /** The body parsed as JSON. */
+  json<T = unknown>(): Promise<T>
+}
+
+/**
  * The lower bound of every context. The outermost middleware seeds it on the
  * entry call; each middleware widens it with its contributed key. Anchoring
  * composition to this base is what lets `Base` inference flow through nested
@@ -47,6 +67,8 @@ export interface Runtime {
 export interface BaseContext {
   /** Portable runtime facet — environment access + host name. */
   readonly runtime: Runtime
+  /** Read-once-cache view of the request body — safe to read from many layers. */
+  readonly body: BufferedBody
 }
 
 /** A composed handler: request + an accumulated context `>= BaseContext`. */
@@ -113,13 +135,33 @@ function makeGetEnv(
   }
 }
 
+/** Build the read-once-cache body view over a request. */
+function bufferedBody(req: Request): BufferedBody {
+  let buffer: Promise<ArrayBuffer> | undefined
+  const arrayBuffer = () => (buffer ??= req.arrayBuffer())
+  const text = async () => new TextDecoder().decode(await arrayBuffer())
+  return {
+    arrayBuffer,
+    bytes: async () => new Uint8Array(await arrayBuffer()),
+    text,
+    json: async <T = unknown>() => JSON.parse(await text()) as T,
+  }
+}
+
 /**
  * Seed a fresh base context for an entry call. `platformArgs` are the positional
  * arguments the host passed after `req` (a Workers `env`, a Deno
  * `ServeHandlerInfo`, …) — used only to source bindings, never merged into `ctx`.
+ * The body view caches `req`'s body so every layer can read it.
  */
-export function seedContext(platformArgs: readonly unknown[]): BaseContext {
-  return { runtime: { name: RUNTIME_NAME, getEnv: makeGetEnv(platformArgs) } }
+export function seedContext(
+  req: Request,
+  platformArgs: readonly unknown[],
+): BaseContext {
+  return {
+    runtime: { name: RUNTIME_NAME, getEnv: makeGetEnv(platformArgs) },
+    body: bufferedBody(req),
+  }
 }
 
 /**

@@ -85,7 +85,7 @@ export function defineMiddleware<
       // so platform arguments never reach `ctx`.
       const upstream: BaseContext = isContext(maybeCtx)
         ? maybeCtx
-        : seedContext([maybeCtx, ...rest])
+        : seedContext(req, [maybeCtx, ...rest])
       const result = await inner(req, upstream as In & BaseContext)
       if (result instanceof Response) return result
       // Defensive: catches authoring bugs the type system can't, e.g. a typo in

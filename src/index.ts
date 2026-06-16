@@ -16,6 +16,7 @@ export { defineMiddleware } from './core/define-middleware.js'
 export type { Middleware } from './core/define-middleware.js'
 export type {
   BaseContext,
+  BufferedBody,
   FetchHandler,
   Handler,
   Runtime,
