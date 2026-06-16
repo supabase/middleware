@@ -13,8 +13,10 @@
 
 import {
   defineMiddleware,
+  rejection,
   type BaseContext,
   type NoConflict,
+  type RejectConfig,
 } from '../../core/index.js'
 
 import type { AuthHookPayload } from './types.js'
@@ -23,7 +25,7 @@ import { verifyStandardWebhook } from './verify.js'
 /**
  * Per-instance configuration passed to `withAuthHook(config, handler)`.
  */
-export interface WithAuthHookConfig {
+export interface WithAuthHookConfig extends RejectConfig {
   /**
    * The hook secret from the Supabase dashboard. Accepts the stored form
    * `v1,whsec_<base64>`, the bare Standard Webhooks form `whsec_<base64>`, or
@@ -39,19 +41,8 @@ export interface WithAuthHookConfig {
    */
   toleranceInSeconds?: number
 
-  /**
-   * HTTP status when verification fails.
-   *
-   * @defaultValue `401`
-   */
-  rejectStatus?: number
-
-  /**
-   * Body when verification fails.
-   *
-   * @defaultValue `{ error: 'invalid_signature' }`
-   */
-  rejectBody?: unknown
+  // `rejectStatus` / `rejectBody` come from RejectConfig. Verification failure
+  // defaults to 401 with `{ error: 'invalid_signature' }`.
 }
 
 /**
@@ -91,12 +82,10 @@ const authHookMiddleware = defineMiddleware<
     )
 
     if (!result.ok) {
-      return Response.json(
-        config.rejectBody ?? { error: 'invalid_signature' },
-        {
-          status: config.rejectStatus ?? 401,
-        },
-      )
+      return rejection(config, {
+        status: 401,
+        body: { error: 'invalid_signature' },
+      })
     }
 
     // Headers are guaranteed present once verification succeeds.

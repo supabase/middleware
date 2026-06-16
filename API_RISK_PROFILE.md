@@ -554,15 +554,16 @@ ceremony); it turns on (a) the innermost handler seeing _every_ upstream key, an
 | **R8** | ✅ **resolved**             | Shipped `@supabase/web-middleware/auth` (`withAuth`) — verifies a Supabase HS256 JWT and contributes `ctx.jwtClaims`, satisfying `withPostgres`'s prerequisite out of the box. `withPostgres` already reads `SUPABASE_DB_URL` via `ctx.runtime.getEnv`. (Implicit module pool remains, by design; HS256-only, JWKS is a follow-up.) See [docs/solutions/R8-auth-middleware.md](docs/solutions/R8-auth-middleware.md). | `auth/with-auth.test.ts` (valid/tampered/wrong-secret/expired/alg-confusion/env-secret); `pnpm build` emits `dist/middleware/auth`.                   |
 | **R6** | 🟡 **root cause removed**   | The dual _intersection_ signature that caused R5 is gone, and nesting is preserved with **no wrapper**. A reusable curried form (`withFoo(config) => (handler)`) + `chain()` was not adopted.                                                                                                                                                                                                                         | n/a (design)                                                                                                                                          |
 | **R7** | ✅ **resolved** (core part) | Core now exports `NoConflict` / `IsAny`; `auth-hook` imports the shared `NoConflict` instead of hand-copying it (the maintenance hazard). `Contribution`-inference and the `postgres` per-config cast are deferred as ⚪ papercuts. See [docs/solutions/R7-authoring-drift.md](docs/solutions/R7-authoring-drift.md).                                                                                                 | `pnpm typecheck` + `pnpm test` ✅ against the shared helper.                                                                                          |
+| **R9** | ✅ **resolved**             | Shared `RejectConfig` + `rejection()` in core; `feature-flag` / `auth-hook` configs `extends RejectConfig` and build short-circuits through it (one definition, consistent surface). `ctx` name kept by design (documented). See [docs/solutions/R9-reject-convention.md](docs/solutions/R9-reject-convention.md).                                                                                                    | `pnpm test` ✅ (existing reject tests cover the shared helper).                                                                                       |
 
 ### Remaining (not addressed by this change)
 
 - **Anchor ergonomics.** Ambient accumulation + collision detection require a
   `satisfies FetchHandler` annotation; omitting it silently degrades _types_ (runtime
-  stays correct). Prerequisite-based typing needs no annotation.
+  stays correct). Prerequisite-based typing needs no annotation. (Addressed as a
+  documented decision — see the anchor-ergonomics solution doc.)
 - **R7 (papercuts).** `Contribution` still isn't inferred from `run`, and `postgres`
   keeps an isolated per-config `as unknown` bridge. Deferred, not defects.
-- **R9 — `ctx` naming.** Kept `ctx`; added the reserved `ctx.runtime`. Not renamed.
 
 ### Verification summary
 

@@ -11,14 +11,14 @@
  * file is referenced from both as the worked example of the pattern.
  */
 
-import { defineMiddleware } from '../../core/index.js'
+import { defineMiddleware, rejection, type RejectConfig } from '../../core/index.js'
 
 /**
  * Per-instance configuration the consumer passes to `withFeatureFlag(config, handler)`.
  *
  * Keep this surface small — every field becomes part of the public API.
  */
-export interface WithFeatureFlagConfig {
+export interface WithFeatureFlagConfig extends RejectConfig {
   /** Human-readable name for the flag. Echoed back on `ctx.featureFlag.name` and the default rejection body. */
   name: string
 
@@ -32,17 +32,9 @@ export interface WithFeatureFlagConfig {
     req: Request,
   ) => Promise<boolean | FeatureFlagVerdict> | boolean | FeatureFlagVerdict
 
-  /**
-   * HTTP status to use when the flag rejects. Default is 404 — "this feature
-   * doesn't exist for you yet" — which is a softer reveal than 403 and avoids
-   * tipping off attackers about the existence of gated functionality.
-   *
-   * @defaultValue `404`
-   */
-  rejectStatus?: number
-
-  /** Body to use when the flag rejects. @defaultValue `{ error: 'feature_disabled', flag: <name> }` */
-  rejectBody?: unknown
+  // `rejectStatus` / `rejectBody` come from RejectConfig. Default reject is 404
+  // — "this feature doesn't exist for you yet" — a softer reveal than 403 that
+  // avoids tipping off attackers about the existence of gated functionality.
 }
 
 /**
@@ -131,10 +123,10 @@ export const withFeatureFlag = defineMiddleware<
 
     if (!verdict.enabled) {
       // Short-circuit: the inner handler is never invoked.
-      return Response.json(
-        config.rejectBody ?? { error: 'feature_disabled', flag: config.name },
-        { status: config.rejectStatus ?? 404 },
-      )
+      return rejection(config, {
+        status: 404,
+        body: { error: 'feature_disabled', flag: config.name },
+      })
     }
 
     // Contribute: fall through to the inner handler with this shape on ctx.
