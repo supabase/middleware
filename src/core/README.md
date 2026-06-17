@@ -51,7 +51,29 @@ Two type-level guarantees:
 
 1. **Outer runs first.** Each middleware is a fetch-handler wrapper, so the outermost sees the request first and its contribution appears on `ctx` for everything it wraps. Reverse the order and any inner middleware that declared an outer's key as a prerequisite won't compile.
 
-2. **Either a `Response` or a contribution — not both.** `run` returns either a `Response` (handed back to the caller in place of the inner handler) or a contribution `{ [key]: … }` (fall through). A returned `Response` isn't a "rejection" or error — it can be any status (200, 302, 404, 503, …). Middleware don't observe or wrap the inner handler's response either. Anything response-shaped — CORS, rate-limit headers, response envelopes — is the handler's (or an outer wrapper's) job. This keeps each middleware's surface small and the response shape under one owner.
+2. **Either a `Response` or a contribution — not both.** `run` returns either a `Response` (handed back to the caller in place of the inner handler) or a contribution `{ [key]: … }` (fall through). A returned `Response` isn't a "rejection" or error — it can be any status (200, 302, 404, 503, …). By default a middleware doesn't observe the inner handler's response — response-shaped concerns are the handler's job, which keeps each surface small and the response shape under one owner. When a middleware genuinely needs the way out, it opts in via the response seam (below).
+
+## Response seam (generator middleware)
+
+The default `run` is request-side: `async (req, ctx) => Response | contribution`. When a middleware needs to act on the response too — stamp headers, time the request, run cleanup — write `run` as an **`async function*`** instead. `yield` is the seam between the request phase and the response phase:
+
+```ts
+run: (config) =>
+  async function* (req, ctx) {
+    // request phase (before yield)
+    const response = yield { myKey: contribution } // suspend; the inner stack runs
+    // response phase (after yield) — `response` is the downstream Response, typed
+    response.headers.set('x-handled', '1')
+    return response // optional; omit to pass the downstream response through
+  }
+```
+
+- **Yield exactly once.** Yield the contribution `{ [key]: … }` to fall through, or yield a `Response` to short-circuit (the inner handler never runs).
+- The `yield` expression resolves to the downstream **`Response`** — inferred, no annotation needed.
+- `try { … yield … } finally { … }` runs cleanup even when a downstream layer throws; `try/catch` around the `yield` can turn a downstream throw into a `Response`.
+- The runtime picks the path automatically (a plain body returns a `Promise`; a generator body returns an async generator). The plain path is unchanged — there's no cost or API difference unless you write `function*`.
+
+This is the one place the request-side default is relaxed, and `function*` is the visible signal that a middleware reaches into the response. [`cors/`](../middleware/cors/) is the worked example — preflight before the `yield`, header stamping after.
 
 ## Threading state through nested middleware
 
@@ -86,4 +108,5 @@ export default {
 ## See also
 
 - [Authoring guide](../middleware/README.md) — write your own middleware.
-- [`feature-flag/`](../middleware/feature-flag/) — the worked example.
+- [`feature-flag/`](../middleware/feature-flag/) — the worked example (request-side).
+- [`cors/`](../middleware/cors/) — the worked example of the response seam (`async function*`).

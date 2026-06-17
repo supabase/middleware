@@ -26,9 +26,17 @@ function warnUnhonoredThirdArg(): void {
  * handler. Other keys on the returned object are ignored at runtime and flagged
  * by excess-property checks at fresh-literal returns.
  *
- * This is **request-side only**: it runs *before* the handler and never observes
- * or wraps the handler's `Response`. Response-shaped concerns (CORS, envelopes)
- * belong in an outer wrapper or the handler.
+ * `run` is **request-side by default** (the common case): it runs *before* the
+ * handler and never observes the handler's `Response`. Response-shaped concerns
+ * (CORS, envelopes) normally belong in the handler or a `.then()` on the entry.
+ *
+ * **Response seam (escape hatch).** When a middleware genuinely needs to see the
+ * way out — stamp headers, time the request, run `finally` cleanup — write `run`
+ * as an `async function*` instead of `async`. `yield` is the seam: code before it
+ * is the request phase, `yield` the contribution (or a short-circuit `Response`),
+ * and the `yield` expression resolves to the downstream `Response` for the
+ * response phase. Yield exactly once. This is the one place a middleware observes
+ * the handler's response, and writing `function*` is the visible, opt-in signal.
  *
  * `withFoo(config, handler)` produces a single `(req, ctx) => Response` function.
  * Middleware nest directly, and the **outermost is used as the runtime's `fetch`
@@ -89,7 +97,13 @@ export function defineMiddleware<
   ) => (
     req: Request,
     ctx: In & BaseContext,
-  ) => Promise<Response | { [K in Key]: Contribution }>
+  ) =>
+    | Promise<Response | { [K in Key]: Contribution }>
+    | AsyncGenerator<
+        Response | { [K in Key]: Contribution },
+        Response | void,
+        Response
+      >
 }): Middleware<Key, Config, In, Contribution> {
   const callable = (config: Config, handler: never) => {
     const inner = spec.run(config)
@@ -112,29 +126,86 @@ export function defineMiddleware<
         workingReq = req.body ? bufferRequest(req) : req
         upstream = seedContext([maybeCtx])
       }
-      const result = await inner(workingReq, upstream as In & BaseContext)
-      if (result instanceof Response) return result
-      // Defensive: catches authoring bugs the type system can't, e.g. a typo
-      // in the returned key that slipped past excess-property checks.
-      if (
-        result === null ||
-        typeof result !== 'object' ||
-        !(spec.key in result)
-      ) {
-        throw new Error(
-          `defineMiddleware '${spec.key}': run() returned an object missing the key '${spec.key}'`,
-        )
+
+      const runInner = handler as unknown as (
+        req: Request,
+        ctx: object,
+      ) => Promise<Response>
+      const callDownstream = (contribution: unknown) =>
+        runInner(workingReq, { ...upstream, [spec.key]: contribution })
+
+      const produced = inner(workingReq, upstream as In & BaseContext)
+
+      // Plain request-side middleware (the 95% case): `run` returns a promise
+      // of a short-circuit `Response` or the contribution. No response seam.
+      if (!isAsyncGenerator(produced)) {
+        const result = await produced
+        if (result instanceof Response) return result
+        return callDownstream(contributionOf(result, spec.key))
       }
-      const ctx = {
-        ...upstream,
-        [spec.key]: (result as Record<string, unknown>)[spec.key],
+
+      // Generator middleware (the escape hatch): `yield` is the seam between the
+      // request phase (before) and the response phase (after). The middleware
+      // yields a short-circuit `Response` or its contribution; we run the inner
+      // stack, then resume it with the downstream `Response` so it can shape the
+      // way out — the one place a middleware observes the handler's response.
+      const gen = produced
+      const first = await gen.next()
+      if (first.value instanceof Response) {
+        if (!first.done) await gen.return(undefined) // run any `finally`
+        return first.value
       }
-      return (
-        handler as unknown as (req: Request, ctx: object) => Promise<Response>
-      )(workingReq, ctx)
+      const contribution = contributionOf(first.value, spec.key)
+      // A generator that `return`ed (rather than `yield`ed) the contribution has
+      // no seam — treat it like the plain path.
+      if (first.done) return callDownstream(contribution)
+
+      let response: Response
+      try {
+        response = await callDownstream(contribution)
+      } catch (err) {
+        // Let a `try/catch` around the middleware's `yield` observe the failure.
+        // If it doesn't handle it, `gen.throw` rethrows and we propagate.
+        const recovered = await gen.throw(err)
+        if (recovered.value instanceof Response) return recovered.value
+        throw err
+      }
+      const resumed = await gen.next(response)
+      if (!resumed.done) await gen.return(undefined) // ignore extra yields, run `finally`
+      return resumed.value instanceof Response ? resumed.value : response
     }
   }
   return callable as unknown as Middleware<Key, Config, In, Contribution>
+}
+
+/**
+ * Narrow a `run` result to the async-generator (onion) form. A plain `async`
+ * body returns a `Promise`; an `async function*` body returns an async
+ * generator, which is what carries the `yield` seam. The two are disjoint, so a
+ * single `Symbol.asyncIterator` probe picks the path with no author ceremony.
+ */
+function isAsyncGenerator(
+  value: unknown,
+): value is AsyncGenerator<unknown, unknown, unknown> {
+  return (
+    value != null &&
+    typeof (value as AsyncGenerator)[Symbol.asyncIterator] === 'function' &&
+    typeof (value as AsyncGenerator).next === 'function'
+  )
+}
+
+/**
+ * Pull the contribution off a fall-through result. Defensive: catches authoring
+ * bugs the type system can't, e.g. a typo in the key that slipped past
+ * excess-property checks, or a generator that produced nothing.
+ */
+function contributionOf(result: unknown, key: string): unknown {
+  if (result === null || typeof result !== 'object' || !(key in result)) {
+    throw new Error(
+      `defineMiddleware '${key}': run() must return or yield an object carrying the key '${key}'`,
+    )
+  }
+  return (result as Record<string, unknown>)[key]
 }
 
 /**
@@ -142,8 +213,9 @@ export function defineMiddleware<
  * (common in tests via `vi.fn` inference), since `keyof any` would false-positive
  * every key.
  */
-export type IsAny<T> =
-  boolean extends (T extends never ? true : false) ? true : false
+export type IsAny<T> = boolean extends (T extends never ? true : false)
+  ? true
+  : false
 
 /**
  * Resolves to a {@link Conflict} sentinel when `Base` already carries `Key`,

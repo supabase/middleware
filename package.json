@@ -30,6 +30,11 @@
       "import": "./dist/middleware/feature-flag/index.mjs",
       "require": "./dist/middleware/feature-flag/index.cjs"
     },
+    "./cors": {
+      "types": "./dist/middleware/cors/index.d.mts",
+      "import": "./dist/middleware/cors/index.mjs",
+      "require": "./dist/middleware/cors/index.cjs"
+    },
     "./package.json": "./package.json"
   },
   "main": "./dist/index.cjs",

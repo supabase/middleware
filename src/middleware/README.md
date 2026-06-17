@@ -52,10 +52,26 @@ The inner stage returns one of two shapes:
 
 The runtime picks `result[key]` off the contribution object and ignores any other fields, so a single `return { featureFlag: { ... } }` is all the author writes.
 
+### The response seam (`async function*`)
+
+The plain inner stage is request-side: it can't see the handler's `Response`. When a middleware genuinely needs the way out — stamp headers, time the request, run `finally` cleanup — write the inner stage as an **`async function*`** instead of `async`, and use `yield` as the seam:
+
+```ts
+run: (config) =>
+  async function* (req, ctx) {
+    // request phase (before yield)
+    const response = yield { myKey: contribution } // suspend; inner stack runs
+    // response phase (after yield) — `response` is the downstream Response
+    return shape(response)
+  }
+```
+
+Rules: **yield exactly once** (the contribution to fall through, or a `Response` to short-circuit); the `yield` expression resolves to the downstream `Response` (typed, no annotation); `try/finally` around the `yield` gives request-spanning cleanup. Both forms share the one `run` signature — the runtime picks the path by what the body returns, so the 95% plain-`async` case is untouched. [`cors/`](./cors/) is the worked example.
+
 ## Authoring rules
 
 1. **One key per middleware.** A middleware that wants multiple slots is doing too much — split it.
-2. **No response shaping.** Middleware don't observe or wrap the inner handler's response. Anything response-shaped — rate-limit headers, CORS, response envelopes — is the handler's (or an outer wrapper's) job. Keeps each surface small and the response shape under one owner.
+2. **Default to request-side.** A plain `async` middleware doesn't observe the inner handler's response, which keeps each surface small and the response shape under one owner. Reach for the response seam (`async function*`, above) only when a concern is genuinely two-sided — CORS, timing, request-spanning cleanup. If you're only producing a response, do it in the handler.
 3. **Declare prerequisites in `In`.** If your middleware needs an upstream key — say `ctx.jwtClaims` from an auth middleware — set `In = { jwtClaims: { sub: string } | null }`. Standalone use then fails to compile — a real error, not a runtime surprise.
 4. **Pick a unique key.** If two middleware contribute the same key, composition fails to typecheck (the inner `ctx` resolves to the `Conflict<Key>` sentinel) under the `satisfies FetchHandler` anchor. If your middleware is one a consumer might legitimately apply more than once (two feature flags, two rate-limit buckets), give it a distinct `Key` per instance — typically by exposing a key override in its own config.
 
@@ -111,3 +127,4 @@ Use `vi.fn` for the inner handler when you need to assert it was (or wasn't) cal
 
 - [`src/core/README.md`](../core/README.md) — composition rules, `ctx` shape, conflict and prerequisite enforcement.
 - [`feature-flag/`](./feature-flag/) — the worked example referenced throughout this guide.
+- [`cors/`](./cors/) — the worked example of the response seam (`async function*`).

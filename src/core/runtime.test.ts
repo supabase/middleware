@@ -8,7 +8,9 @@ describe('runtime detection + getEnv (arg 2 handling)', () => {
   })
 
   it('cloudflare getEnv reads bindings from the per-request env (arg 2)', () => {
-    const getEnv = makeGetEnv('cloudflare-workers', [{ API_KEY: 'abc', NUM: 1 }])
+    const getEnv = makeGetEnv('cloudflare-workers', [
+      { API_KEY: 'abc', NUM: 1 },
+    ])
     expect(getEnv('API_KEY')).toBe('abc')
     expect(getEnv('NUM')).toBeUndefined() // non-string binding
     expect(getEnv('MISSING')).toBeUndefined()
@@ -27,9 +29,9 @@ describe('runtime detection + getEnv (arg 2 handling)', () => {
     env.__WM_TEST__ = 'present'
     try {
       expect(makeGetEnv('node', [])('__WM_TEST__')).toBe('present')
-      expect(makeGetEnv('bun', [{ __WM_TEST__: 'shadow' }])('__WM_TEST__')).toBe(
-        'present',
-      )
+      expect(
+        makeGetEnv('bun', [{ __WM_TEST__: 'shadow' }])('__WM_TEST__'),
+      ).toBe('present')
     } finally {
       delete env.__WM_TEST__
     }
