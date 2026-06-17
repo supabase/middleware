@@ -19,8 +19,17 @@ export default {
 
 ## Install
 
+Not yet published to npm/JSR — install from git. The package builds itself on install via a `prepare` script:
+
 ```sh
-pnpm add @supabase/web-middleware
+pnpm add github:supabase/web-middleware
+```
+
+With pnpm, allow the install build in `pnpm-workspace.yaml`:
+
+```yaml
+allowBuilds:
+  '@supabase/web-middleware': true
 ```
 
 ## What's in the box
@@ -91,8 +100,32 @@ Supported entry signatures are **`(request)`** and **`(request, env)`**. A third
 
 A middleware runs **before** the handler. In the common case it never observes the handler's `Response` — no `next()`, no on-the-way-out mutation — so response shape stays under one owner (the handler). Most response-side concerns are then plain `Promise<Response>` operations on the entry:
 
-- **Errors** — `try/catch` in your handler, or `.catch()` on the entry: `export default { fetch: (req) => stack(req).catch(onError) }`.
-- **Response headers / envelopes** — return the shaped `Response` from your handler, or map it: `(req) => stack(req).then(addHeaders)`.
+- **Errors** — `try/catch` in your handler, or `.catch()` on the entry.
+- **Response headers / envelopes** — return the shaped `Response` from your handler, or map it with `.then()`.
+
+```ts
+import type { FetchHandler } from '@supabase/web-middleware'
+import { withFeatureFlag } from '@supabase/web-middleware/feature-flag'
+
+const stack = withFeatureFlag(
+  { name: 'beta', evaluate: (req) => req.headers.has('x-beta') },
+  async (_req, ctx) => Response.json({ flag: ctx.featureFlag.name }),
+) satisfies FetchHandler
+
+export default {
+  fetch: (req: Request) =>
+    stack(req)
+      // response headers on the way out — a plain Promise<Response> map
+      .then((res) => {
+        res.headers.set('x-powered-by', 'web-middleware')
+        return res
+      })
+      // errors anywhere in the stack
+      .catch(() => Response.json({ error: 'internal' }, { status: 500 })),
+}
+```
+
+When a concern is genuinely two-sided and belongs _inside_ a middleware rather than on the entry, reach for the response seam below.
 
 ### The response seam (when a middleware really needs the way out)
 
@@ -114,9 +147,9 @@ This is the **one** place the "request-side" guarantee is relaxed, and writing `
 
 ## Docs
 
-- [Composition primitives](./src/core/README.md) — `ctx` shape, conflict & prerequisite enforcement, composition rules.
-- [Authoring guide](./src/middleware/README.md) — write your own middleware with `defineMiddleware`.
-- Per-middleware: [feature-flag](./src/middleware/feature-flag/README.md) — the worked example.
+- [Composition primitives](./src/core/README.md) — `ctx` shape, conflict & prerequisite enforcement, composition rules, the response seam.
+- [Authoring guide](./src/middleware/README.md) — write your own middleware with `defineMiddleware` (request-side and generator forms).
+- Per-middleware: [feature-flag](./src/middleware/feature-flag/README.md) — the request-side worked example · [cors](./src/middleware/cors/README.md) — the response-seam worked example.
 
 ## License
 
