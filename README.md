@@ -100,28 +100,27 @@ Supported entry signatures are **`(request)`** and **`(request, env)`**. A third
 
 A middleware runs **before** the handler. In the common case it never observes the handler's `Response` — no `next()`, no on-the-way-out mutation — so response shape stays under one owner (the handler). Most response-side concerns are then plain `Promise<Response>` operations on the entry:
 
-- **Errors** — `try/catch` in your handler, or `.catch()` on the entry.
-- **Response headers / envelopes** — return the shaped `Response` from your handler, or map it with `.then()`.
+- **Errors** — `try/catch` in your handler, or around `await`ing the stack on the entry.
+- **Response headers / envelopes** — return the shaped `Response` from your handler, or set them on the awaited one.
 
 ```ts
-import type { FetchHandler } from '@supabase/web-middleware'
 import { withFeatureFlag } from '@supabase/web-middleware/feature-flag'
 
-const stack = withFeatureFlag(
-  { name: 'beta', evaluate: (req) => req.headers.has('x-beta') },
-  async (_req, ctx) => Response.json({ flag: ctx.featureFlag.name }),
-) satisfies FetchHandler
-
 export default {
-  fetch: (req: Request) =>
-    stack(req)
-      // response headers on the way out — a plain Promise<Response> map
-      .then((res) => {
-        res.headers.set('x-powered-by', 'web-middleware')
-        return res
-      })
+  async fetch(req: Request) {
+    try {
+      const res = await withFeatureFlag(
+        { name: 'beta', evaluate: (r) => r.headers.has('x-beta') },
+        async (_req, ctx) => Response.json({ flag: ctx.featureFlag.name }),
+      )(req)
+      // response headers on the way out
+      res.headers.set('x-powered-by', 'web-middleware')
+      return res
+    } catch {
       // errors anywhere in the stack
-      .catch(() => Response.json({ error: 'internal' }, { status: 500 })),
+      return Response.json({ error: 'internal' }, { status: 500 })
+    }
+  },
 }
 ```
 
