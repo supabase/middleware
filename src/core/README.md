@@ -68,8 +68,7 @@ run: (config) =>
   }
 ```
 
-- **Yield exactly once.** Yield the contribution `{ [key]: … }` to fall through, or yield a `Response` to short-circuit (the inner handler never runs).
-- The `yield` expression resolves to the downstream **`Response`** — inferred, no annotation needed.
+- **`yield` only ever means "run downstream, hand me the response."** Yield the contribution `{ [key]: … }` once; the `yield` expression resolves to the downstream **`Response`** (inferred, no annotation). To short-circuit, `return new Response(...)` — same as the request-side path. (Yielding a `Response` also short-circuits, but `return` is the idiomatic spelling; reserve `yield` for the seam.)
 - `try { … yield … } finally { … }` runs cleanup even when a downstream layer throws; `try/catch` around the `yield` can turn a downstream throw into a `Response`.
 - The runtime picks the path automatically (a plain body returns a `Promise`; a generator body returns an async generator). The plain path is unchanged — there's no cost or API difference unless you write `function*`.
 

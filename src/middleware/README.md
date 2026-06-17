@@ -66,7 +66,7 @@ run: (config) =>
   }
 ```
 
-Rules: **yield exactly once** (the contribution to fall through, or a `Response` to short-circuit); the `yield` expression resolves to the downstream `Response` (typed, no annotation); `try/finally` around the `yield` gives request-spanning cleanup. Both forms share the one `run` signature — the runtime picks the path by what the body returns, so the 95% plain-`async` case is untouched. [`cors/`](./cors/) is the worked example.
+Rules: **`yield` the contribution at most once** — `yield` means "run downstream and hand me the response," and its expression resolves to the downstream `Response` (typed, no annotation). To short-circuit, `return new Response(...)` (same as the request-side path); `try/finally` around the `yield` gives request-spanning cleanup. Both forms share the one `run` signature — the runtime picks the path by what the body returns, so the 95% plain-`async` case is untouched. [`cors/`](./cors/) is the worked example: `return` answers preflight, `yield` stamps headers on the way out.
 
 ## Authoring rules
 

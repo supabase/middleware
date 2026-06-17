@@ -33,10 +33,12 @@ function warnUnhonoredThirdArg(): void {
  * **Response seam (escape hatch).** When a middleware genuinely needs to see the
  * way out — stamp headers, time the request, run `finally` cleanup — write `run`
  * as an `async function*` instead of `async`. `yield` is the seam: code before it
- * is the request phase, `yield` the contribution (or a short-circuit `Response`),
- * and the `yield` expression resolves to the downstream `Response` for the
- * response phase. Yield exactly once. This is the one place a middleware observes
- * the handler's response, and writing `function*` is the visible, opt-in signal.
+ * is the request phase; you `yield` the contribution and the `yield` expression
+ * resolves to the downstream `Response` for the response phase. `yield` always
+ * means "run downstream and hand me the response" — short-circuit with a plain
+ * `return new Response(...)`, exactly as the request-side path does, and yield at
+ * most once. This is the one place a middleware observes the handler's response,
+ * and writing `function*` is the visible, opt-in signal.
  *
  * `withFoo(config, handler)` produces a single `(req, ctx) => Response` function.
  * Middleware nest directly, and the **outermost is used as the runtime's `fetch`

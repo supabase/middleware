@@ -167,16 +167,16 @@ export const withCors = defineMiddleware<
       const requestOrigin = req.headers.get('Origin')
       const allowOrigin = resolveAllowOrigin(config, requestOrigin)
 
-      // Request side: answer the preflight ourselves; the handler never runs.
+      // Request side: answer the preflight ourselves. `return` short-circuits —
+      // the handler never runs, and there's no response phase to reach.
       const isPreflight =
         req.method === 'OPTIONS' &&
         req.headers.has('Access-Control-Request-Method')
       if (isPreflight) {
-        yield new Response(null, {
+        return new Response(null, {
           status: config.optionsSuccessStatus ?? 204,
           headers: buildPreflightHeaders(config, req, allowOrigin),
         })
-        return
       }
 
       // Fall through, then shape the response on the way out.

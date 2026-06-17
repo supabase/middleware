@@ -345,25 +345,33 @@ describe('defineMiddleware — generator (response seam)', () => {
     expect(await res.json()).toEqual({ ok: true })
   })
 
-  it('short-circuits by yielding a Response — the inner handler never runs', async () => {
-    const inner = vi.fn(innerOk)
-    const gate = defineMiddleware<
-      'gate',
-      undefined,
-      Record<never, never>,
-      Record<never, never>
-    >({
-      key: 'gate',
-      run: () =>
-        async function* () {
-          yield new Response('blocked', { status: 403 })
-        },
-    })
+  // A generator short-circuits the same way a plain body does: by *producing* a
+  // Response. `return` is idiomatic (it reads as "I'm done, no response phase");
+  // the driver also accepts a yielded Response, but `yield` is meant for the seam.
+  it.each(['return', 'yield'] as const)(
+    'short-circuits via %s of a Response — the inner handler never runs',
+    async (mode) => {
+      const inner = vi.fn(innerOk)
+      const gate = defineMiddleware<
+        'gate',
+        undefined,
+        Record<never, never>,
+        Record<never, never>
+      >({
+        key: 'gate',
+        run: () =>
+          async function* () {
+            const blocked = new Response('blocked', { status: 403 })
+            if (mode === 'return') return blocked
+            yield blocked
+          },
+      })
 
-    const res = await gate(undefined, inner)(new Request('http://localhost/'))
-    expect(res.status).toBe(403)
-    expect(inner).not.toHaveBeenCalled()
-  })
+      const res = await gate(undefined, inner)(new Request('http://localhost/'))
+      expect(res.status).toBe(403)
+      expect(inner).not.toHaveBeenCalled()
+    },
+  )
 
   it('runs `finally` for request-spanning cleanup, even on downstream throw', async () => {
     const order: string[] = []
