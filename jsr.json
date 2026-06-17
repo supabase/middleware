@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "exports": {
     ".": "./src/index.ts",
-    "./feature-flag": "./src/middleware/feature-flag/index.ts"
+    "./feature-flag": "./src/middleware/feature-flag/index.ts",
+    "./cors": "./src/middleware/cors/index.ts"
   },
   "publish": {
     "include": ["src/**/*.ts", "README.md", "LICENSE"],

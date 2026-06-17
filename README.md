@@ -29,6 +29,7 @@ pnpm add @supabase/web-middleware
 | --------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | `@supabase/web-middleware`              | The `defineMiddleware` primitive + `Runtime` / `FetchHandler` / `Middleware` / `Conflict` types. |
 | `@supabase/web-middleware/feature-flag` | Provider-agnostic feature flag — admit or short-circuit per request.                             |
+| `@supabase/web-middleware/cors`         | CORS — answers preflight and stamps response headers (the worked example of the response seam).  |
 
 ## How it composes
 
@@ -86,16 +87,30 @@ The host is detected once at module load. On Cloudflare Workers, `getEnv` reads 
 
 Supported entry signatures are **`(request)`** and **`(request, env)`**. A third `fetch` argument — the Workers `ExecutionContext` (`waitUntil` / `passThroughOnException`) — is **not honored**: it's ignored with a one-time `console.warn`. The Deno target never passes one.
 
-## Request-side only — by design
+## Request-side by default
 
-A middleware here runs **before** the handler and never observes or wraps the handler's `Response`. This is the deliberate difference from Express/Koa's onion model: there's no `next()`, no on-the-way-out response mutation.
-
-So **response-side concerns live in the handler (or a complete middleware), not in framework wrappers.** Each is a plain `Response` operation you already know:
+A middleware runs **before** the handler. In the common case it never observes the handler's `Response` — no `next()`, no on-the-way-out mutation — so response shape stays under one owner (the handler). Most response-side concerns are then plain `Promise<Response>` operations on the entry:
 
 - **Errors** — `try/catch` in your handler, or `.catch()` on the entry: `export default { fetch: (req) => stack(req).catch(onError) }`.
-- **Response headers / envelopes (CORS, security headers)** — return the shaped `Response` from your handler, or map it: `(req) => stack(req).then(addHeaders)`. CORS preflight is a request-side `OPTIONS` short-circuit (a normal middleware).
+- **Response headers / envelopes** — return the shaped `Response` from your handler, or map it: `(req) => stack(req).then(addHeaders)`.
 
-These are one-liners over a `Promise<Response>`; the substrate stays focused on request-side composition rather than shipping wrappers for them.
+### The response seam (when a middleware really needs the way out)
+
+Some concerns are irreducibly two-sided — timing, request-spanning cleanup, CORS (preflight in, headers out). For those, write `run` as an **`async function*`** instead of `async`. `yield` is the seam:
+
+```ts
+run: (config) =>
+  async function* (req, ctx) {
+    const start = performance.now() // request phase (before)
+    const response = yield { timing: { route: req.url } } // ← contribute, then suspend
+    response.headers.set('x-time', `${performance.now() - start}`) // response phase (after)
+    return response
+  }
+```
+
+The `yield` expression resolves to the downstream `Response` (typed as `Response`, inferred — no annotation). `yield` the contribution at most once — `yield` means "run downstream and hand me the response." To short-circuit (handler never runs), `return new Response(...)`, exactly as a plain request-side middleware does. `try/finally` around the `yield` gives request-spanning cleanup; `try/catch` can turn a downstream throw into a `Response`.
+
+This is the **one** place the "request-side" guarantee is relaxed, and writing `function*` is the visible, opt-in signal — the 95% plain-`async` path is unchanged. [`/cors`](./src/middleware/cors/) is the worked example.
 
 ## Docs
 

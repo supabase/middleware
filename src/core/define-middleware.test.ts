@@ -132,7 +132,9 @@ describe('defineMiddleware', () => {
       { len: number }
     >({
       key: 'reader',
-      run: () => async (req) => ({ reader: { len: (await req.text()).length } }),
+      run: () => async (req) => ({
+        reader: { len: (await req.text()).length },
+      }),
     })
 
     const fetchHandler = withReader(undefined, async (req) => {
@@ -289,6 +291,200 @@ describe('defineMiddleware', () => {
     await expect(
       fetchHandler(new Request('http://localhost/')),
     ).rejects.toThrow(/'broken'/)
+  })
+})
+
+describe('defineMiddleware — generator (response seam)', () => {
+  // A timing middleware written as an `async function*`: stamp a header on the
+  // way out. The `yield` expression resolves to the downstream Response.
+  const withStamp = defineMiddleware<
+    'stamp',
+    { header: string },
+    Record<never, never>,
+    { at: string }
+  >({
+    key: 'stamp',
+    run: (config) =>
+      async function* () {
+        const response = yield { stamp: { at: 'before' } }
+        response.headers.set(config.header, 'seen')
+        return response
+      },
+  })
+
+  it('observes and shapes the downstream response on the way out', async () => {
+    const handler = withStamp({ header: 'x-stamp' }, async (_req, ctx) =>
+      Response.json({ at: ctx.stamp.at }),
+    )
+
+    const res = await handler(new Request('http://localhost/'))
+    expect(res.headers.get('x-stamp')).toBe('seen')
+    expect(await res.json()).toEqual({ at: 'before' }) // contribution reached the handler
+  })
+
+  it('returns the inner response when the generator falls off without returning one', async () => {
+    const observe = defineMiddleware<
+      'observe',
+      undefined,
+      Record<never, never>,
+      { seen: true }
+    >({
+      key: 'observe',
+      run: () =>
+        async function* () {
+          yield { observe: { seen: true } }
+          // no `return` — the downstream response passes through unchanged
+        },
+    })
+
+    const handler = observe(undefined, async () =>
+      Response.json({ ok: true }, { status: 201 }),
+    )
+    const res = await handler(new Request('http://localhost/'))
+    expect(res.status).toBe(201)
+    expect(await res.json()).toEqual({ ok: true })
+  })
+
+  // A generator short-circuits the same way a plain body does: by *producing* a
+  // Response. `return` is idiomatic (it reads as "I'm done, no response phase");
+  // the driver also accepts a yielded Response, but `yield` is meant for the seam.
+  it.each(['return', 'yield'] as const)(
+    'short-circuits via %s of a Response — the inner handler never runs',
+    async (mode) => {
+      const inner = vi.fn(innerOk)
+      const gate = defineMiddleware<
+        'gate',
+        undefined,
+        Record<never, never>,
+        Record<never, never>
+      >({
+        key: 'gate',
+        run: () =>
+          async function* () {
+            const blocked = new Response('blocked', { status: 403 })
+            if (mode === 'return') return blocked
+            yield blocked
+          },
+      })
+
+      const res = await gate(undefined, inner)(new Request('http://localhost/'))
+      expect(res.status).toBe(403)
+      expect(inner).not.toHaveBeenCalled()
+    },
+  )
+
+  it('runs `finally` for request-spanning cleanup, even on downstream throw', async () => {
+    const order: string[] = []
+    const withResource = defineMiddleware<
+      'resource',
+      undefined,
+      Record<never, never>,
+      { id: number }
+    >({
+      key: 'resource',
+      run: () =>
+        async function* () {
+          order.push('acquire')
+          try {
+            const response = yield { resource: { id: 1 } }
+            return response
+          } finally {
+            order.push('release')
+          }
+        },
+    })
+
+    const boom = withResource(undefined, async () => {
+      order.push('handler')
+      throw new Error('downstream boom')
+    })
+
+    await expect(boom(new Request('http://localhost/'))).rejects.toThrow(
+      'downstream boom',
+    )
+    expect(order).toEqual(['acquire', 'handler', 'release'])
+  })
+
+  it('lets a try/catch around `yield` recover a downstream throw into a Response', async () => {
+    const withCatch = defineMiddleware<
+      'guard',
+      undefined,
+      Record<never, never>,
+      { ok: true }
+    >({
+      key: 'guard',
+      run: () =>
+        async function* () {
+          try {
+            return yield { guard: { ok: true } }
+          } catch {
+            return new Response('handled', { status: 500 })
+          }
+        },
+    })
+
+    const handler = withCatch(undefined, async () => {
+      throw new Error('kaboom')
+    })
+    const res = await handler(new Request('http://localhost/'))
+    expect(res.status).toBe(500)
+    expect(await res.text()).toBe('handled')
+  })
+
+  it('composes a generator middleware under a plain one, accumulating ctx', async () => {
+    const handler = withFeatureFlag(
+      { name: 'beta', evaluate: () => true },
+      withStamp({ header: 'x-stamp' }, async (_req, ctx) =>
+        Response.json({ flag: ctx.featureFlag.name, at: ctx.stamp.at }),
+      ),
+    ) satisfies FetchHandler
+
+    const res = await handler(new Request('http://localhost/'))
+    expect(res.headers.get('x-stamp')).toBe('seen')
+    expect(await res.json()).toEqual({ flag: 'beta', at: 'before' })
+  })
+
+  it('two generator seams unwind as an onion: request top-down, response bottom-up', async () => {
+    const order: string[] = []
+    const seam = <Key extends string>(key: Key) =>
+      defineMiddleware<Key, undefined, Record<never, never>, { tag: Key }>({
+        key,
+        run: () =>
+          async function* () {
+            order.push(`${key}:in`)
+            const response = (yield { [key]: { tag: key } } as {
+              [P in Key]: { tag: Key }
+            }) as Response
+            order.push(`${key}:out`)
+            // Each layer sees the response shaped by everything inside it.
+            response.headers.append('x-seen', key)
+            return response
+          },
+      })
+
+    const outer = seam('outer')
+    const inner = seam('inner')
+
+    const handler = outer(
+      undefined,
+      inner(undefined, async () => {
+        order.push('handler')
+        return Response.json({ ok: true })
+      }),
+    ) satisfies FetchHandler
+
+    const res = await handler(new Request('http://localhost/'))
+
+    // Request phase runs outer→inner→handler; response phase unwinds inner→outer.
+    expect(order).toEqual([
+      'outer:in',
+      'inner:in',
+      'handler',
+      'inner:out',
+      'outer:out',
+    ])
+    // Both seams shaped the same response, inner first then outer.
+    expect(res.headers.get('x-seen')).toBe('inner, outer')
   })
 })
 

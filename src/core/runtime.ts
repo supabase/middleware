@@ -68,7 +68,10 @@ export type Handler<Ctx extends BaseContext = BaseContext> = (
  * ambiently. It is not needed for cross-middleware dependencies declared as `In`
  * prerequisites — those type without any annotation.
  */
-export type FetchHandler = (req: Request, ctx?: BaseContext) => Promise<Response>
+export type FetchHandler = (
+  req: Request,
+  ctx?: BaseContext,
+) => Promise<Response>
 
 /** Best-effort host detection. Deno is checked first because it also defines `navigator`. Exported for testing. */
 export function detectRuntimeName(): RuntimeName {
@@ -127,7 +130,10 @@ export function makeGetEnv(
  */
 export function seedContext(platformArgs: readonly unknown[]): BaseContext {
   return {
-    _runtime: { name: RUNTIME_NAME, getEnv: makeGetEnv(RUNTIME_NAME, platformArgs) },
+    _runtime: {
+      name: RUNTIME_NAME,
+      getEnv: makeGetEnv(RUNTIME_NAME, platformArgs),
+    },
   }
 }
 

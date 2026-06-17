@@ -1,7 +1,11 @@
 import { defineConfig } from 'tsdown'
 
 export default defineConfig({
-  entry: ['src/index.ts', 'src/middleware/feature-flag/index.ts'],
+  entry: [
+    'src/index.ts',
+    'src/middleware/feature-flag/index.ts',
+    'src/middleware/cors/index.ts',
+  ],
   format: ['esm', 'cjs'],
   dts: true,
 })
