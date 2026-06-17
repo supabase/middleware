@@ -98,30 +98,30 @@ Supported entry signatures are **`(request)`** and **`(request, env)`**. A third
 
 ## Request-side by default
 
-A middleware runs **before** the handler. In the common case it never observes the handler's `Response` — no `next()`, no on-the-way-out mutation — so response shape stays under one owner (the handler). Most response-side concerns are then plain `Promise<Response>` operations on the entry:
+A middleware runs **before** the handler. In the common case it never observes the handler's `Response` — no `next()`, no on-the-way-out mutation — so response shape stays under one owner: the handler. Response-side concerns are then plain `Response` work, right where they belong:
 
-- **Errors** — `try/catch` in your handler, or `.catch()` on the entry.
-- **Response headers / envelopes** — return the shaped `Response` from your handler, or map it with `.then()`.
+- **Errors** — `try/catch` inside the handler.
+- **Response headers / envelopes** — shape the `Response` the handler returns.
 
 ```ts
-import type { FetchHandler } from '@supabase/web-middleware'
 import { withFeatureFlag } from '@supabase/web-middleware/feature-flag'
 
-const stack = withFeatureFlag(
-  { name: 'beta', evaluate: (req) => req.headers.has('x-beta') },
-  async (_req, ctx) => Response.json({ flag: ctx.featureFlag.name }),
-) satisfies FetchHandler
-
 export default {
-  fetch: (req: Request) =>
-    stack(req)
-      // response headers on the way out — a plain Promise<Response> map
-      .then((res) => {
-        res.headers.set('x-powered-by', 'web-middleware')
-        return res
-      })
-      // errors anywhere in the stack
-      .catch(() => Response.json({ error: 'internal' }, { status: 500 })),
+  fetch: withFeatureFlag(
+    { name: 'beta', evaluate: (req) => req.headers.has('x-beta') },
+    async (req, ctx) => {
+      try {
+        const body = await req.json()
+        // response headers / envelope — shaped here, by the response's owner
+        return Response.json(
+          { flag: ctx.featureFlag.name, body },
+          { headers: { 'x-powered-by': 'web-middleware' } },
+        )
+      } catch {
+        return Response.json({ error: 'bad request' }, { status: 400 })
+      }
+    },
+  ),
 }
 ```
 
