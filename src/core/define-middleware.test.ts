@@ -435,6 +435,49 @@ describe('defineMiddleware — generator (response seam)', () => {
     expect(res.headers.get('x-stamp')).toBe('seen')
     expect(await res.json()).toEqual({ flag: 'beta', at: 'before' })
   })
+
+  it('two generator seams unwind as an onion: request top-down, response bottom-up', async () => {
+    const order: string[] = []
+    const seam = <Key extends string>(key: Key) =>
+      defineMiddleware<Key, undefined, Record<never, never>, { tag: Key }>({
+        key,
+        run: () =>
+          async function* () {
+            order.push(`${key}:in`)
+            const response = (yield { [key]: { tag: key } } as {
+              [P in Key]: { tag: Key }
+            }) as Response
+            order.push(`${key}:out`)
+            // Each layer sees the response shaped by everything inside it.
+            response.headers.append('x-seen', key)
+            return response
+          },
+      })
+
+    const outer = seam('outer')
+    const inner = seam('inner')
+
+    const handler = outer(
+      undefined,
+      inner(undefined, async () => {
+        order.push('handler')
+        return Response.json({ ok: true })
+      }),
+    ) satisfies FetchHandler
+
+    const res = await handler(new Request('http://localhost/'))
+
+    // Request phase runs outer→inner→handler; response phase unwinds inner→outer.
+    expect(order).toEqual([
+      'outer:in',
+      'inner:in',
+      'handler',
+      'inner:out',
+      'outer:out',
+    ])
+    // Both seams shaped the same response, inner first then outer.
+    expect(res.headers.get('x-seen')).toBe('inner, outer')
+  })
 })
 
 // ---------------------------------------------------------------------------
