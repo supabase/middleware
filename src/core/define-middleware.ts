@@ -23,8 +23,14 @@ function warnUnhonoredThirdArg(): void {
  * either short-circuits by returning a `Response`, or contributes a typed value
  * at `ctx[key]` by returning a single-key object `{ [key]: contribution }` — the
  * framework picks `result[key]`, merges it into the context, and calls the inner
- * handler. Other keys on the returned object are ignored at runtime and flagged
- * by excess-property checks at fresh-literal returns.
+ * handler. Extra keys on the returned object are ignored at runtime. Note they
+ * are **not** caught at compile time: `run`'s return is contextually typed
+ * against a `Response | { [key]: … }` union via a generic mapped type, a position
+ * where TypeScript suppresses excess-property checks — so a stray sibling key
+ * slips past the types (harmlessly). The runtime {@link contributionOf} guard is
+ * the backstop, and it throws only when the key is *missing* entirely (e.g. a
+ * computed/typo'd key the types couldn't see). To opt into the excess check on a
+ * given middleware, annotate `run`'s inner return type explicitly.
  *
  * `run` is **request-side by default** (the common case): it runs *before* the
  * handler and never observes the handler's `Response`. Response-shaped concerns
