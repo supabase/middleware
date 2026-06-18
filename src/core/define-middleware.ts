@@ -23,8 +23,14 @@ function warnUnhonoredThirdArg(): void {
  * either short-circuits by returning a `Response`, or contributes a typed value
  * at `ctx[key]` by returning a single-key object `{ [key]: contribution }` — the
  * framework picks `result[key]`, merges it into the context, and calls the inner
- * handler. Other keys on the returned object are ignored at runtime and flagged
- * by excess-property checks at fresh-literal returns.
+ * handler. Extra keys on the returned object are ignored at runtime. Note they
+ * are **not** caught at compile time: `run`'s return is contextually typed
+ * against a `Response | { [key]: … }` union via a generic mapped type, a position
+ * where TypeScript suppresses excess-property checks — so a stray sibling key
+ * slips past the types (harmlessly). The runtime {@link contributionOf} guard is
+ * the backstop, and it throws only when the key is *missing* entirely (e.g. a
+ * computed/typo'd key the types couldn't see). To opt into the excess check on a
+ * given middleware, annotate `run`'s inner return type explicitly.
  *
  * `run` is **request-side by default** (the common case): it runs *before* the
  * handler and never observes the handler's `Response`. Response-shaped concerns
@@ -107,7 +113,16 @@ export function defineMiddleware<
         Response
       >
 }): Middleware<Key, Config, In, Contribution> {
-  const callable = (config: Config, handler: never) => {
+  const callable = (...args: unknown[]) => {
+    // `config` is optional at the call site for config-less middleware
+    // (`withFoo(handler)`); a lone argument is the handler. Two arguments are
+    // always `(config, handler)` — so passing `config: undefined` explicitly
+    // still works, but is never required.
+    const config = (args.length >= 2 ? args[0] : undefined) as Config
+    const handler = (args.length >= 2 ? args[1] : args[0]) as (
+      req: Request,
+      ctx: object,
+    ) => Promise<Response>
     const inner = spec.run(config)
     return async (req: Request, maybeCtx?: object, ...rest: unknown[]) => {
       // A parent middleware passes a real context; the host passes a platform
@@ -129,10 +144,7 @@ export function defineMiddleware<
         upstream = seedContext([maybeCtx])
       }
 
-      const runInner = handler as unknown as (
-        req: Request,
-        ctx: object,
-      ) => Promise<Response>
+      const runInner = handler
       const callDownstream = (contribution: unknown) =>
         runInner(workingReq, { ...upstream, [spec.key]: contribution })
 
@@ -249,8 +261,20 @@ type Produced<Base, In> = keyof In extends never
   : (req: Request, ctx: Base) => Promise<Response>
 
 /**
+ * The argument list of a produced middleware. When `Config` admits `undefined`
+ * — a config-less middleware, typed `void` or `undefined` — the leading
+ * `config` argument may be dropped (`withFoo(handler)`), so no `undefined`
+ * placeholder is threaded through call sites. Otherwise `config` is required and
+ * positional. Either way, passing `config` explicitly still typechecks.
+ */
+type MiddlewareArgs<Config, Handler> = undefined extends Config
+  ? [handler: Handler] | [config: Config, handler: Handler]
+  : [config: Config, handler: Handler]
+
+/**
  * The shape of a middleware — a `(config, handler) => handler` callable that
- * {@link defineMiddleware} produces. `Base` is constrained to
+ * {@link defineMiddleware} produces (config-less middleware may call it as
+ * `(handler)`; see {@link MiddlewareArgs}). `Base` is constrained to
  * `In & BaseContext & NoConflict<Key, Base>` and defaults to `In & BaseContext`,
  * which self-anchors the outermost handler without an entry wrapper.
  */
@@ -260,9 +284,11 @@ export type Middleware<
   In extends object,
   Contribution,
 > = <Base extends In & BaseContext & NoConflict<Key, Base>>(
-  config: Config,
-  handler: (
-    req: Request,
-    ctx: Base & { [K in Key]: Contribution },
-  ) => Promise<Response>,
+  ...args: MiddlewareArgs<
+    Config,
+    (
+      req: Request,
+      ctx: Base & { [K in Key]: Contribution },
+    ) => Promise<Response>
+  >
 ) => Produced<Base, In>
