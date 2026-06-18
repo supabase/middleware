@@ -17,13 +17,13 @@ const passing = <Key extends string, C extends object>(
   key: Key,
   contribution: C,
 ) =>
-  defineMiddleware<Key, undefined, Record<never, never>, C>({
+  defineMiddleware<Key, void, Record<never, never>, C>({
     key,
     run: () => async () => ({ [key]: contribution }) as { [K in Key]: C },
   })
 
 const rejecting = <Key extends string>(key: Key, status = 401) =>
-  defineMiddleware<Key, undefined, Record<never, never>, Record<never, never>>({
+  defineMiddleware<Key, void, Record<never, never>, Record<never, never>>({
     key,
     run: () => async () => new Response(`rejected by ${key}`, { status }),
   })
@@ -51,7 +51,7 @@ describe('defineMiddleware', () => {
 
   const withGreeting = defineMiddleware<
     'greeting',
-    undefined,
+    void,
     Record<never, never>,
     { hello: string }
   >({
@@ -60,7 +60,7 @@ describe('defineMiddleware', () => {
   })
 
   it('does not let a host-supplied env (arg 2) leak into ctx', async () => {
-    const fetchHandler = withGreeting(undefined, async (_req, ctx) =>
+    const fetchHandler = withGreeting(async (_req, ctx) =>
       Response.json({ keys: Object.keys(ctx) }),
     )
 
@@ -74,7 +74,7 @@ describe('defineMiddleware', () => {
   it('warns (does not throw) and ignores a third fetch argument (exec context)', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
-      const fetchHandler = withGreeting(undefined, async (_req, ctx) =>
+      const fetchHandler = withGreeting(async (_req, ctx) =>
         Response.json({ keys: Object.keys(ctx) }),
       )
 
@@ -97,7 +97,7 @@ describe('defineMiddleware', () => {
     // that also reads the body — both read `req`, no "Body already consumed".
     const withReader = defineMiddleware<
       'reader',
-      undefined,
+      void,
       Record<never, never>,
       { len: number }
     >({
@@ -107,7 +107,7 @@ describe('defineMiddleware', () => {
       }),
     })
 
-    const fetchHandler = withReader(undefined, async (req, ctx) => {
+    const fetchHandler = withReader(async (req, ctx) => {
       const parsed = (await req.json()) as { hello: string }
       // ctx.reader.len is the length the middleware read; hello comes from the
       // handler's own (second) read of the same body.
@@ -127,7 +127,7 @@ describe('defineMiddleware', () => {
   it('buffered req: formData() works after a middleware reads the body', async () => {
     const withReader = defineMiddleware<
       'reader',
-      undefined,
+      void,
       Record<never, never>,
       { len: number }
     >({
@@ -137,7 +137,7 @@ describe('defineMiddleware', () => {
       }),
     })
 
-    const fetchHandler = withReader(undefined, async (req) => {
+    const fetchHandler = withReader(async (req) => {
       const form = await req.formData()
       return Response.json({ a: form.get('a'), b: form.get('b') })
     })
@@ -154,12 +154,12 @@ describe('defineMiddleware', () => {
   it('buffered req: clone() shares the cached body', async () => {
     const passthrough = defineMiddleware<
       'p',
-      undefined,
+      void,
       Record<never, never>,
       { ok: true }
     >({ key: 'p', run: () => async () => ({ p: { ok: true } }) })
 
-    const fetchHandler = passthrough(undefined, async (req) => {
+    const fetchHandler = passthrough(async (req) => {
       const original = await req.json()
       const cloned = await req.clone().json() // clone reads the same cached body
       return Response.json({
@@ -184,7 +184,7 @@ describe('defineMiddleware', () => {
 
   it('short-circuits on reject without calling the inner handler', async () => {
     const inner = vi.fn(innerOk)
-    const fetchHandler = rejecting('blocker', 402)(undefined, inner)
+    const fetchHandler = rejecting('blocker', 402)(inner)
 
     const res = await fetchHandler(new Request('http://localhost/'))
     expect(res.status).toBe(402)
@@ -278,7 +278,7 @@ describe('defineMiddleware', () => {
   it('throws if run() returns an object missing the key', async () => {
     const broken = defineMiddleware<
       'broken',
-      undefined,
+      void,
       Record<never, never>,
       { v: number }
     >({
@@ -286,7 +286,7 @@ describe('defineMiddleware', () => {
       run: () => async () => ({ wrongKey: { v: 1 } }) as never,
     })
 
-    const fetchHandler = broken(undefined, innerOk)
+    const fetchHandler = broken(innerOk)
 
     await expect(
       fetchHandler(new Request('http://localhost/')),
@@ -325,7 +325,7 @@ describe('defineMiddleware — generator (response seam)', () => {
   it('returns the inner response when the generator falls off without returning one', async () => {
     const observe = defineMiddleware<
       'observe',
-      undefined,
+      void,
       Record<never, never>,
       { seen: true }
     >({
@@ -337,7 +337,7 @@ describe('defineMiddleware — generator (response seam)', () => {
         },
     })
 
-    const handler = observe(undefined, async () =>
+    const handler = observe(async () =>
       Response.json({ ok: true }, { status: 201 }),
     )
     const res = await handler(new Request('http://localhost/'))
@@ -354,7 +354,7 @@ describe('defineMiddleware — generator (response seam)', () => {
       const inner = vi.fn(innerOk)
       const gate = defineMiddleware<
         'gate',
-        undefined,
+        void,
         Record<never, never>,
         Record<never, never>
       >({
@@ -367,7 +367,7 @@ describe('defineMiddleware — generator (response seam)', () => {
           },
       })
 
-      const res = await gate(undefined, inner)(new Request('http://localhost/'))
+      const res = await gate(inner)(new Request('http://localhost/'))
       expect(res.status).toBe(403)
       expect(inner).not.toHaveBeenCalled()
     },
@@ -377,7 +377,7 @@ describe('defineMiddleware — generator (response seam)', () => {
     const order: string[] = []
     const withResource = defineMiddleware<
       'resource',
-      undefined,
+      void,
       Record<never, never>,
       { id: number }
     >({
@@ -394,7 +394,7 @@ describe('defineMiddleware — generator (response seam)', () => {
         },
     })
 
-    const boom = withResource(undefined, async () => {
+    const boom = withResource(async () => {
       order.push('handler')
       throw new Error('downstream boom')
     })
@@ -408,7 +408,7 @@ describe('defineMiddleware — generator (response seam)', () => {
   it('lets a try/catch around `yield` recover a downstream throw into a Response', async () => {
     const withCatch = defineMiddleware<
       'guard',
-      undefined,
+      void,
       Record<never, never>,
       { ok: true }
     >({
@@ -423,7 +423,7 @@ describe('defineMiddleware — generator (response seam)', () => {
         },
     })
 
-    const handler = withCatch(undefined, async () => {
+    const handler = withCatch(async () => {
       throw new Error('kaboom')
     })
     const res = await handler(new Request('http://localhost/'))
@@ -447,7 +447,7 @@ describe('defineMiddleware — generator (response seam)', () => {
   it('two generator seams unwind as an onion: request top-down, response bottom-up', async () => {
     const order: string[] = []
     const seam = <Key extends string>(key: Key) =>
-      defineMiddleware<Key, undefined, Record<never, never>, { tag: Key }>({
+      defineMiddleware<Key, void, Record<never, never>, { tag: Key }>({
         key,
         run: () =>
           async function* () {
@@ -466,8 +466,7 @@ describe('defineMiddleware — generator (response seam)', () => {
     const inner = seam('inner')
 
     const handler = outer(
-      undefined,
-      inner(undefined, async () => {
+      inner(async () => {
         order.push('handler')
         return Response.json({ ok: true })
       }),
@@ -500,8 +499,7 @@ describe('type guarantees (tsc-verified)', () => {
     const withB = passing('beta', { v: 2 })
 
     const _app = withA(
-      undefined,
-      withB(undefined, async (_req, ctx) => {
+      withB(async (_req, ctx) => {
         const a: number = ctx.alpha.v
         const b: number = ctx.beta.v
         const host: string = ctx._runtime.name
@@ -519,14 +517,14 @@ describe('type guarantees (tsc-verified)', () => {
 
     const _bad =
       // @ts-expect-error — inner `withFoo` shadows upstream key 'foo'
-      withFoo(undefined, withFoo(undefined, innerOk)) satisfies FetchHandler
+      withFoo(withFoo(innerOk)) satisfies FetchHandler
     void _bad
   })
 
   it('prerequisite: a middleware with `In` keys cannot be a bare fetch entry', () => {
     const withNeedsAuth = defineMiddleware<
       'authz',
-      undefined,
+      void,
       { jwtClaims: { sub: string } },
       { ok: boolean }
     >({
@@ -534,7 +532,7 @@ describe('type guarantees (tsc-verified)', () => {
       run: () => async () => ({ authz: { ok: true } }),
     })
 
-    const handler = withNeedsAuth(undefined, innerOk)
+    const handler = withNeedsAuth(innerOk)
     // @ts-expect-error — requires upstream jwtClaims; cannot satisfy a bare entry
     const _entry: FetchHandler = handler
     void _entry
@@ -543,7 +541,7 @@ describe('type guarantees (tsc-verified)', () => {
   it('cross-middleware deps via `In` type with no anchor', () => {
     const withStamp = defineMiddleware<
       'stamp',
-      undefined,
+      void,
       Record<never, never>,
       { at: number }
     >({ key: 'stamp', run: () => async () => ({ stamp: { at: 1 } }) })
@@ -552,7 +550,7 @@ describe('type guarantees (tsc-verified)', () => {
     // the prerequisite-free upstream needn't be declared — runtime is always there.
     const _app = withFeatureFlag(
       { name: 'beta', evaluate: () => true },
-      withStamp(undefined, async (_req, ctx) => {
+      withStamp(async (_req, ctx) => {
         const at: number = ctx.stamp.at
         const host: string = ctx._runtime.name
         void at

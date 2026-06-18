@@ -52,7 +52,7 @@ import { withFeatureFlag } from '@supabase/web-middleware/feature-flag'
 // A middleware is just a `defineMiddleware` call — bundled or your own.
 const withRequestId = defineMiddleware<
   'requestId',
-  undefined,
+  void,
   Record<never, never>,
   string
 >({
@@ -64,7 +64,6 @@ const withRequestId = defineMiddleware<
 
 export default {
   fetch: withRequestId(
-    undefined,
     withFeatureFlag(
       { name: 'beta', evaluate: (req) => req.headers.has('x-beta') },
       async (_req, ctx) => {
