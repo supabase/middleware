@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { withFeatureFlag } from '../middleware/feature-flag/with-feature-flag.js'
 import { defineMiddleware } from './define-middleware.js'
+import { pipeline } from './pipeline.js'
 import type { BaseContext, FetchHandler } from './runtime.js'
+import type { Entry } from './types.js'
 
 const innerOk = async () => Response.json({ ok: true })
 
@@ -484,6 +486,83 @@ describe('defineMiddleware — generator (response seam)', () => {
     ])
     // Both seams shaped the same response, inner first then outer.
     expect(res.headers.get('x-seen')).toBe('inner, outer')
+  })
+})
+
+describe('auto-curry: mw(config) returns an Entry', () => {
+  it('mw(config) returns an entry that pipelines correctly', async () => {
+    const withGreeting = defineMiddleware<
+      'greeting',
+      { who: string },
+      Record<never, never>,
+      { hello: string }
+    >({
+      key: 'greeting',
+      run: (config) => async () => ({ greeting: { hello: config.who } }),
+    })
+
+    const handler = pipeline(
+      [withGreeting({ who: 'world' })],
+      async (_req, ctx) => Response.json({ msg: ctx.greeting.hello }),
+    )
+
+    const res = await handler(new Request('http://localhost/'))
+    expect(await res.json()).toEqual({ msg: 'world' })
+  })
+
+  it('mw(config) in pipeline produces the same result as direct nesting', async () => {
+    const withGreeting = defineMiddleware<
+      'greeting',
+      { who: string },
+      Record<never, never>,
+      { hello: string }
+    >({
+      key: 'greeting',
+      run: (config) => async () => ({ greeting: { hello: config.who } }),
+    })
+
+    const nested = withGreeting(
+      { who: 'world' },
+      async (_req, ctx) => Response.json({ msg: ctx.greeting.hello }),
+    )
+    const flat = pipeline(
+      [withGreeting({ who: 'world' })],
+      async (_req, ctx) => Response.json({ msg: ctx.greeting.hello }),
+    )
+
+    const [nestedRes, flatRes] = await Promise.all([
+      nested(new Request('http://localhost/')),
+      flat(new Request('http://localhost/')),
+    ])
+    expect(await nestedRes.json()).toEqual(await flatRes.json())
+  })
+
+  it('mw() (no config) works for config-less middleware', async () => {
+    const withTag = passing('tag', { v: 'ok' })
+    const handler = pipeline([withTag()], async (_req, ctx) =>
+      Response.json({ v: ctx.tag.v }),
+    )
+    const res = await handler(new Request('http://localhost/'))
+    expect(await res.json()).toEqual({ v: 'ok' })
+  })
+
+  it('type guarantee: mw(config) satisfies Entry', () => {
+    const withGreeting = defineMiddleware<
+      'greeting',
+      { who: string },
+      Record<never, never>,
+      { hello: string }
+    >({
+      key: 'greeting',
+      run: (config) => async () => ({ greeting: { hello: config.who } }),
+    })
+
+    const _entry = withGreeting({ who: 'world' }) satisfies Entry<
+      'greeting',
+      Record<never, never>,
+      { hello: string }
+    >
+    void _entry
   })
 })
 

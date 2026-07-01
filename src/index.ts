@@ -12,6 +12,7 @@
 
 export { defineMiddleware } from './core/define-middleware.js'
 export type { IsAny, Middleware, NoConflict } from './core/define-middleware.js'
+export { pipeline } from './core/pipeline.js'
 export type {
   BaseContext,
   FetchHandler,
@@ -19,4 +20,4 @@ export type {
   Runtime,
   RuntimeName,
 } from './core/runtime.js'
-export type { Conflict } from './core/types.js'
+export type { Conflict, Entry } from './core/types.js'
