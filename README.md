@@ -2,20 +2,25 @@
 
 Composable, type-safe middleware for Web Fetch handlers.
 
-A **middleware** is a `(config, handler)` wrapper — `withFoo(config, handler)` — that runs against the inbound `Request`, contributes a typed key to `ctx`, and either short-circuits with a `Response` or falls through to the inner handler. Stack them by direct nesting; the innermost handler sees a flat `ctx` aggregated from every wrapper around it. No registry, no `app.use()`, no separate composer.
-
-Each `withFoo(config, handler)` produces a single `(req, ctx) => Response` function, and **the outermost one is the `fetch` handler directly** — no wrapper. When the runtime invokes it, the middleware detects that the host's second argument is a platform value (Deno's connection info, a Workers `env`) rather than an upstream context and seeds `ctx._runtime` itself, so platform arguments never leak into `ctx`. The runtime is detected once, at module load. Because everything is plain Web Fetch, the same stack runs unchanged across Deno, Cloudflare Workers, Bun, and Node.
+A **middleware** is a `withFoo` function. Call it with just the config — `withFoo(config)` — to get an **`Entry`**: a typed placeholder that carries the middleware's key, prerequisites, and contribution as phantom types. Pass a flat array of entries to `pipeline` with a final handler; `pipeline` folds the array into nested calls at runtime and every entry's contribution lands on `ctx` in order. No registry, no `app.use()`, no nesting.
 
 ```ts
+import { pipeline } from '@supabase/web-middleware'
+import { withCors } from '@supabase/web-middleware/cors'
 import { withFeatureFlag } from '@supabase/web-middleware/feature-flag'
 
 export default {
-  fetch: withFeatureFlag(
-    { name: 'beta', evaluate: (req) => req.headers.has('x-beta') },
-    async (_req, ctx) => Response.json({ variant: ctx.featureFlag.variant }),
+  fetch: pipeline(
+    [
+      withCors({}),
+      withFeatureFlag({ name: 'beta', evaluate: (req) => req.headers.has('x-beta') }),
+    ],
+    async (_req, ctx) => Response.json({ flag: ctx.featureFlag.name }),
   ),
 }
 ```
+
+`pipeline` returns the outermost `(req, ctx) => Response` — **that is the `fetch` handler directly**, no wrapper. When the runtime invokes it, the framework detects a platform argument (Deno's connection info, a Workers `env`) and seeds `ctx._runtime` itself, so platform values never leak into `ctx`. The runtime is detected once at module load. Because everything is plain Web Fetch, the same stack runs unchanged across Deno, Cloudflare Workers, Bun, and Node.
 
 ## Install
 
@@ -34,28 +39,23 @@ allowBuilds:
 
 ## What's in the box
 
-| Import                                  | What it does                                                                                     |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `@supabase/web-middleware`              | The `defineMiddleware` primitive + `Runtime` / `FetchHandler` / `Middleware` / `Conflict` types. |
-| `@supabase/web-middleware/feature-flag` | Provider-agnostic feature flag — admit or short-circuit per request.                             |
-| `@supabase/web-middleware/cors`         | CORS — answers preflight and stamps response headers (the worked example of the response seam).  |
+| Import                                  | What it does                                                                                                                     |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `@supabase/web-middleware`              | `pipeline`, `defineMiddleware`, and the core types: `Entry`, `FetchHandler`, `Middleware`, `Conflict`, `Runtime`, `BaseContext`. |
+| `@supabase/web-middleware/feature-flag` | Provider-agnostic feature flag — admit or short-circuit per request.                                                             |
+| `@supabase/web-middleware/cors`         | CORS — answers preflight and stamps response headers (the worked example of the response seam).                                  |
 
 ## How it composes
 
-Each middleware contributes one typed key to `ctx`. Nest them; the inner handler sees the union. Add `satisfies FetchHandler` on the outermost handler to anchor the types so the innermost handler sees **every** upstream key ambiently:
+Each middleware contributes one typed key to `ctx`. Pass entries as a flat array to `pipeline` — first in the array runs first on the request. Add `satisfies FetchHandler` on the `pipeline` call to anchor the types so the handler sees **every** upstream key ambiently:
 
 ```ts
-import { defineMiddleware } from '@supabase/web-middleware'
+import { pipeline, defineMiddleware } from '@supabase/web-middleware'
 import type { FetchHandler } from '@supabase/web-middleware'
 import { withFeatureFlag } from '@supabase/web-middleware/feature-flag'
 
 // A middleware is just a `defineMiddleware` call — bundled or your own.
-const withRequestId = defineMiddleware<
-  'requestId',
-  void,
-  Record<never, never>,
-  string
->({
+const withRequestId = defineMiddleware<'requestId', void, Record<never, never>, string>({
   key: 'requestId',
   run: () => async (req) => ({
     requestId: req.headers.get('x-request-id') ?? crypto.randomUUID(),
@@ -63,16 +63,17 @@ const withRequestId = defineMiddleware<
 })
 
 export default {
-  fetch: withRequestId(
-    withFeatureFlag(
-      { name: 'beta', evaluate: (req) => req.headers.has('x-beta') },
-      async (_req, ctx) => {
-        ctx.requestId //  from withRequestId
-        ctx.featureFlag // from withFeatureFlag
-        ctx._runtime //   seeded automatically — ctx._runtime.getEnv('…'), ctx._runtime.name
-        return new Response(null, { status: 200 })
-      },
-    ),
+  fetch: pipeline(
+    [
+      withRequestId(),    // no config — still returns an Entry
+      withFeatureFlag({ name: 'beta', evaluate: (req) => req.headers.has('x-beta') }),
+    ],
+    async (_req, ctx) => {
+      ctx.requestId   //  from withRequestId
+      ctx.featureFlag //  from withFeatureFlag
+      ctx._runtime    //  seeded automatically — ctx._runtime.getEnv('…'), ctx._runtime.name
+      return new Response(null, { status: 200 })
+    },
   ) satisfies FetchHandler,
 }
 ```
