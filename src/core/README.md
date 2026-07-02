@@ -14,16 +14,28 @@ The package root exports:
 
 ## Quick start (consumer)
 
+Pass an array of entries to `pipeline` — first runs first on the request.
+`ctx` is inferred from the array; no manual annotation is needed.
+
 ```ts
+import { pipeline } from '@supabase/web-middleware'
+import { withCors } from '@supabase/web-middleware/cors'
 import { withFeatureFlag } from '@supabase/web-middleware/feature-flag'
 
 export default {
-  fetch: withFeatureFlag(
-    { name: 'beta', evaluate: (req) => req.headers.has('x-beta') },
-    async (req, ctx) => Response.json({ variant: ctx.featureFlag.variant }),
+  fetch: pipeline(
+    [
+      withCors({}),
+      withFeatureFlag({ name: 'beta', evaluate: (req) => req.headers.has('x-beta') }),
+    ],
+    async (req, ctx) => Response.json({ flag: ctx.featureFlag.name }),
   ),
 }
 ```
+
+Under the hood, `pipeline` folds the array into the same nested calls as
+hand-writing `withCors({}, withFeatureFlag({…}, handler))` — there is no new
+runtime behavior, just a flat readable form.
 
 ## The `ctx` shape
 
@@ -74,22 +86,30 @@ run: (config) =>
 
 This is the one place the request-side default is relaxed, and `function*` is the visible signal that a middleware reaches into the response. [`cors/`](../middleware/cors/) is the worked example — preflight before the `yield`, header stamping after.
 
-## Threading state through nested middleware
+## Threading state through the stack
 
-When a middleware is wrapped by another, the outer's keys land on `Base` for the inner. TypeScript infers `Base` through the nested single-signature handlers — anchored at the top by `satisfies FetchHandler` — so the handler sees the full accumulated `ctx`:
+Each middleware's contribution lands on `ctx` for every middleware and handler
+inside it. With `pipeline`, this accumulation is typed from the array — add
+`satisfies FetchHandler` on the outermost call to anchor ambient accumulation
+and collision detection:
 
 ```ts
+import { pipeline } from '@supabase/web-middleware'
 import type { FetchHandler } from '@supabase/web-middleware'
+import { withFeatureFlag } from '@supabase/web-middleware/feature-flag'
 
 export default {
-  fetch: withFeatureFlag(
-    { name: 'beta', evaluate: (req) => req.headers.has('x-beta') },
-    withMyMiddleware({ ... }, async (_req, ctx) => {
+  fetch: pipeline(
+    [
+      withFeatureFlag({ name: 'beta', evaluate: (req) => req.headers.has('x-beta') }),
+      withMyMiddleware({ ... }),
+    ],
+    async (_req, ctx) => {
       ctx._runtime      // seeded at the entry call
       ctx.featureFlag  // from withFeatureFlag
       ctx.myMiddleware // from withMyMiddleware
       return Response.json({ ok: true })
-    }),
+    },
   ) satisfies FetchHandler,
 }
 ```
@@ -98,6 +118,8 @@ export default {
 
 | Export                                      | Description                                                                                   |
 | ------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `pipeline(entries, handler)`                | Compose a flat array of entries around a handler. Returns a `FetchHandler`.                   |
+| `Entry<Key, In, Contribution>`              | Type produced by `mw(config)`. Carries phantom types for `pipeline`'s accumulation.           |
 | `defineMiddleware(spec)`                    | Author helper: declare a middleware. Returns a `(config, handler)` callable.                  |
 | `FetchHandler`                              | Type-only anchor (`… satisfies FetchHandler`) for ambient accumulation + collision detection. |
 | `Conflict<Key>`                             | Sentinel string a middleware's `ctx` resolves to when it would shadow an upstream key.        |

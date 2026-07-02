@@ -1,4 +1,4 @@
-import type { Conflict } from './types.js'
+import type { Conflict, ConfigArgs, Entry } from './types.js'
 import type { BaseContext } from './runtime.js'
 import { bufferRequest, isContext, seedContext } from './runtime.js'
 
@@ -114,15 +114,22 @@ export function defineMiddleware<
       >
 }): Middleware<Key, Config, In, Contribution> {
   const callable = (...args: unknown[]) => {
-    // `config` is optional at the call site for config-less middleware
-    // (`withFoo(handler)`); a lone argument is the handler. Two arguments are
-    // always `(config, handler)` — so passing `config: undefined` explicitly
-    // still works, but is never required.
+    const lastArg = args[args.length - 1]
+
+    // Config-only call — no args, or the last argument is not a function.
+    // Returns an Entry whose call carries the config into the handler so it
+    // can be passed to `pipeline` directly: `pipeline([withFoo(cfg)], handler)`.
+    if (args.length === 0 || typeof lastArg !== 'function') {
+      const config = (args.length > 0 ? args[0] : undefined) as Config
+      const wrap = (handler: (req: Request, ctx: object) => Promise<Response>) =>
+        callable(config, handler) as unknown as (req: Request, ctx: object) => Promise<Response>
+      return wrap as Entry<Key, In, Contribution>
+    }
+
+    // Handler call — last arg is a function.
+    // For config-less middleware `withFoo(handler)` config stays undefined.
     const config = (args.length >= 2 ? args[0] : undefined) as Config
-    const handler = (args.length >= 2 ? args[1] : args[0]) as (
-      req: Request,
-      ctx: object,
-    ) => Promise<Response>
+    const handler = lastArg as (req: Request, ctx: object) => Promise<Response>
     const inner = spec.run(config)
     return async (req: Request, maybeCtx?: object, ...rest: unknown[]) => {
       // A parent middleware passes a real context; the host passes a platform
@@ -272,23 +279,38 @@ type MiddlewareArgs<Config, Handler> = undefined extends Config
   : [config: Config, handler: Handler]
 
 /**
- * The shape of a middleware — a `(config, handler) => handler` callable that
- * {@link defineMiddleware} produces (config-less middleware may call it as
- * `(handler)`; see {@link MiddlewareArgs}). `Base` is constrained to
- * `In & BaseContext & NoConflict<Key, Base>` and defaults to `In & BaseContext`,
- * which self-anchors the outermost handler without an entry wrapper.
+ * The shape of a middleware produced by {@link defineMiddleware}.
+ *
+ * Two call signatures:
+ * - **Config-only** — `mw(config)` (or `mw()` for config-less) returns an
+ *   {@link Entry} for use in a {@link pipeline} array.
+ * - **Handler** — `mw(config, handler)` (or `mw(handler)`) returns the produced
+ *   fetch handler directly, with `Base` inferred from the handler's `ctx` type.
+ *   `Base` is constrained to `In & BaseContext & NoConflict<Key, Base>` so both
+ *   prerequisite enforcement and collision detection surface at the call site.
  */
-export type Middleware<
+export interface Middleware<
   Key extends string,
   Config,
   In extends object,
   Contribution,
-> = <Base extends In & BaseContext & NoConflict<Key, Base>>(
-  ...args: MiddlewareArgs<
-    Config,
-    (
-      req: Request,
-      ctx: Base & { [K in Key]: Contribution },
-    ) => Promise<Response>
-  >
-) => Produced<Base, In>
+> {
+  // Handler call — listed first so TypeScript's bidirectional generic inference
+  // works correctly for nested calls (`withA(withB(handler))`). This is the
+  // same signature as the original type alias, so accumulation and collision
+  // detection are preserved unchanged.
+  <Base extends In & BaseContext & NoConflict<Key, Base>>(
+    ...args: MiddlewareArgs<
+      Config,
+      (
+        req: Request,
+        ctx: Base & { [K in Key]: Contribution },
+      ) => Promise<Response>
+    >
+  ): Produced<Base, In>
+  // Config-only call — `mw(config)` (or `mw()` for config-less) returns an
+  // Entry for use in a `pipeline` array. Falls through from the handler overload
+  // because config-only calls either have the wrong arity (required-config mw)
+  // or pass a non-function (which doesn't match MiddlewareArgs' Handler slot).
+  (...args: ConfigArgs<Config>): Entry<Key, In, Contribution>
+}
