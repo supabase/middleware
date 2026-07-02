@@ -110,6 +110,35 @@ describe('pipeline', () => {
     const res = await handler(new Request('http://localhost/'))
     expect(await res.json()).toEqual({ name: 'user:u1' })
   })
+
+  it('still drives a generator entry through the response seam', async () => {
+    // A regression guard for the flat syntax: an `async function*` middleware
+    // placed in a pipeline array must still observe and shape the downstream
+    // Response, exactly as it would hand-nested.
+    const withStamp = defineMiddleware<
+      'stamp',
+      { header: string },
+      Record<never, never>,
+      { at: string }
+    >({
+      key: 'stamp',
+      run: (config) =>
+        async function* () {
+          const response = yield { stamp: { at: 'before' } }
+          response.headers.set(config.header, 'seen')
+          return response
+        },
+    })
+
+    const handler = pipeline(
+      [withStamp({ header: 'x-stamp' })],
+      async (_req, ctx) => Response.json({ at: ctx.stamp.at }),
+    )
+
+    const res = await handler(new Request('http://localhost/'))
+    expect(res.headers.get('x-stamp')).toBe('seen')
+    expect(await res.json()).toEqual({ at: 'before' })
+  })
 })
 
 // ---------------------------------------------------------------------------
