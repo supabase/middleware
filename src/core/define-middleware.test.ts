@@ -546,6 +546,22 @@ describe('auto-curry: mw(config) returns an Entry', () => {
     expect(await res.json()).toEqual({ v: 'ok' })
   })
 
+  it('mw() (no config) in pipeline produces the same result as direct nesting', async () => {
+    const withTag = passing('tag', { v: 'ok' })
+
+    const nested = withTag(async (_req, ctx) => Response.json({ v: ctx.tag.v }))
+    const flat = pipeline(
+      [withTag()],
+      async (_req, ctx) => Response.json({ v: ctx.tag.v }),
+    )
+
+    const [nestedRes, flatRes] = await Promise.all([
+      nested(new Request('http://localhost/')),
+      flat(new Request('http://localhost/')),
+    ])
+    expect(await nestedRes.json()).toEqual(await flatRes.json())
+  })
+
   it('type guarantee: mw(config) satisfies Entry', () => {
     const withGreeting = defineMiddleware<
       'greeting',
@@ -562,6 +578,13 @@ describe('auto-curry: mw(config) returns an Entry', () => {
       Record<never, never>,
       { hello: string }
     >
+    void _entry
+  })
+
+  it('type guarantee: mw() satisfies Entry for config-less middleware', () => {
+    const withTag = passing('tag', { v: 'ok' })
+
+    const _entry = withTag() satisfies Entry<'tag', Record<never, never>, { v: string }>
     void _entry
   })
 })
