@@ -78,7 +78,7 @@ export interface FeatureFlagContribution {
  *
  * @example
  * ```ts
- * import { withFeatureFlag } from '@supabase/web-middleware/feature-flag'
+ * import { withFeatureFlag } from '@supabase/middleware/feature-flag'
  *
  * export default {
  *   fetch: withFeatureFlag(

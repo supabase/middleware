@@ -1,6 +1,6 @@
 # Writing a middleware
 
-This directory holds the **middleware** that ship with `@supabase/web-middleware`. A middleware is a `(config, handler)` fetch-handler wrapper that runs against the inbound `Request`, contributes a typed key to `ctx`, and either short-circuits with a `Response` or falls through to the inner handler. Anyone can publish one as a standalone npm package; the built-ins use the same `defineMiddleware` primitive third-party authors do.
+This directory holds the **middleware** that ship with `@supabase/middleware`. A middleware is a `(config, handler)` fetch-handler wrapper that runs against the inbound `Request`, contributes a typed key to `ctx`, and either short-circuits with a `Response` or falls through to the inner handler. Anyone can publish one as a standalone npm package; the built-ins use the same `defineMiddleware` primitive third-party authors do.
 
 This README is for **authors**. If you just want to _use_ a middleware, see [`src/core/README.md`](../core/README.md).
 
@@ -109,7 +109,7 @@ To add a middleware to this package, three files change in addition to the new d
 2. **[`tsdown.config.ts`](../../tsdown.config.ts)** — add `'src/middleware/<name>/index.ts'` to `entry`.
 3. **[`jsr.json`](../../jsr.json)** — add `"./<name>": "./src/middleware/<name>/index.ts"`.
 
-A third-party middleware published as its own npm package skips all three — it just exports the result of `defineMiddleware` and depends on `@supabase/web-middleware` for the primitive.
+A third-party middleware published as its own npm package skips all three — it just exports the result of `defineMiddleware` and depends on `@supabase/middleware` for the primitive.
 
 ## Testing the run stages
 

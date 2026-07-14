@@ -1,4 +1,4 @@
-# `@supabase/web-middleware` (composition primitives)
+# `@supabase/middleware` (composition primitives)
 
 A **middleware** is a `(config, handler)` wrapper — `withFoo(config, handler)` — that runs against the inbound `Request` and contributes its own typed key to `ctx`. Each one produces a single `(req, ctx) => Response` function. Stack middleware by direct nesting; the innermost handler sees a flat `ctx` aggregated from every wrapper around it. **The outermost is the runtime's `fetch` handler directly — no wrapper, no separate composer.**
 
@@ -18,9 +18,9 @@ Pass an array of entries to `pipeline` — first runs first on the request.
 `ctx` is inferred from the array; no manual annotation is needed.
 
 ```ts
-import { pipeline } from '@supabase/web-middleware'
-import { withCors } from '@supabase/web-middleware/cors'
-import { withFeatureFlag } from '@supabase/web-middleware/feature-flag'
+import { pipeline } from '@supabase/middleware'
+import { withCors } from '@supabase/middleware/cors'
+import { withFeatureFlag } from '@supabase/middleware/feature-flag'
 
 export default {
   fetch: pipeline(
@@ -94,9 +94,9 @@ inside it. With `pipeline`, this accumulation is typed from the array — add
 and collision detection:
 
 ```ts
-import { pipeline } from '@supabase/web-middleware'
-import type { FetchHandler } from '@supabase/web-middleware'
-import { withFeatureFlag } from '@supabase/web-middleware/feature-flag'
+import { pipeline } from '@supabase/middleware'
+import type { FetchHandler } from '@supabase/middleware'
+import { withFeatureFlag } from '@supabase/middleware/feature-flag'
 
 export default {
   fetch: pipeline(

@@ -1,11 +1,11 @@
 /**
- * `@supabase/web-middleware` — composable, type-safe middleware for Web Fetch
+ * `@supabase/middleware` — composable, type-safe middleware for Web Fetch
  * handlers.
  *
  * The package root exports the {@link defineMiddleware} primitive and supporting
  * types. The built-in `feature-flag` middleware lives behind a subpath:
  *
- * - `@supabase/web-middleware/feature-flag`
+ * - `@supabase/middleware/feature-flag`
  *
  * @packageDocumentation
  */

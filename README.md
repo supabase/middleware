@@ -1,13 +1,13 @@
-# `@supabase/web-middleware`
+# `@supabase/middleware`
 
 Composable, type-safe middleware for Web Fetch handlers.
 
 A **middleware** is a `withFoo` function. Call it with just the config — `withFoo(config)` — to get an **`Entry`**: a typed placeholder that carries the middleware's key, prerequisites, and contribution as phantom types. Pass a flat array of entries to `pipeline` with a final handler; `pipeline` folds the array into nested calls at runtime and every entry's contribution lands on `ctx` in order. No registry, no `app.use()`, no nesting.
 
 ```ts
-import { pipeline } from '@supabase/web-middleware'
-import { withCors } from '@supabase/web-middleware/cors'
-import { withFeatureFlag } from '@supabase/web-middleware/feature-flag'
+import { pipeline } from '@supabase/middleware'
+import { withCors } from '@supabase/middleware/cors'
+import { withFeatureFlag } from '@supabase/middleware/feature-flag'
 
 export default {
   fetch: pipeline(
@@ -27,32 +27,32 @@ export default {
 Not yet published to npm/JSR — install from git. The package builds itself on install via a `prepare` script:
 
 ```sh
-pnpm add github:supabase/web-middleware
+pnpm add github:supabase/middleware
 ```
 
 With pnpm, allow the install build in `pnpm-workspace.yaml`:
 
 ```yaml
 allowBuilds:
-  '@supabase/web-middleware': true
+  '@supabase/middleware': true
 ```
 
 ## What's in the box
 
 | Import                                  | What it does                                                                                                                     |
 | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `@supabase/web-middleware`              | `pipeline`, `defineMiddleware`, and the core types: `Entry`, `FetchHandler`, `Middleware`, `Conflict`, `Runtime`, `BaseContext`. |
-| `@supabase/web-middleware/feature-flag` | Provider-agnostic feature flag — admit or short-circuit per request.                                                             |
-| `@supabase/web-middleware/cors`         | CORS — answers preflight and stamps response headers (the worked example of the response seam).                                  |
+| `@supabase/middleware`              | `pipeline`, `defineMiddleware`, and the core types: `Entry`, `FetchHandler`, `Middleware`, `Conflict`, `Runtime`, `BaseContext`. |
+| `@supabase/middleware/feature-flag` | Provider-agnostic feature flag — admit or short-circuit per request.                                                             |
+| `@supabase/middleware/cors`         | CORS — answers preflight and stamps response headers (the worked example of the response seam).                                  |
 
 ## How it composes
 
 Each middleware contributes one typed key to `ctx`. Pass entries as a flat array to `pipeline` — first in the array runs first on the request. Add `satisfies FetchHandler` on the `pipeline` call to anchor the types so the handler sees **every** upstream key ambiently:
 
 ```ts
-import { pipeline, defineMiddleware } from '@supabase/web-middleware'
-import type { FetchHandler } from '@supabase/web-middleware'
-import { withFeatureFlag } from '@supabase/web-middleware/feature-flag'
+import { pipeline, defineMiddleware } from '@supabase/middleware'
+import type { FetchHandler } from '@supabase/middleware'
+import { withFeatureFlag } from '@supabase/middleware/feature-flag'
 
 // A middleware is just a `defineMiddleware` call — bundled or your own.
 const withRequestId = defineMiddleware<'requestId', void, Record<never, never>, string>({
@@ -104,7 +104,7 @@ A middleware runs **before** the handler. In the common case it never observes t
 - **Response headers / envelopes** — shape the `Response` the handler returns.
 
 ```ts
-import { withFeatureFlag } from '@supabase/web-middleware/feature-flag'
+import { withFeatureFlag } from '@supabase/middleware/feature-flag'
 
 export default {
   fetch: withFeatureFlag(
@@ -115,7 +115,7 @@ export default {
         // response headers / envelope — shaped here, by the response's owner
         return Response.json(
           { flag: ctx.featureFlag.name, body },
-          { headers: { 'x-powered-by': 'web-middleware' } },
+          { headers: { 'x-powered-by': 'middleware' } },
         )
       } catch {
         return Response.json({ error: 'bad request' }, { status: 400 })

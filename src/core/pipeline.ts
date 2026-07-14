@@ -69,9 +69,9 @@ type Validate<Entries extends readonly unknown[], Ctx = BaseContext> =
  *
  * @example
  * ```ts
- * import { pipeline } from '@supabase/web-middleware'
- * import { withCors } from '@supabase/web-middleware/cors'
- * import { withFeatureFlag } from '@supabase/web-middleware/feature-flag'
+ * import { pipeline } from '@supabase/middleware'
+ * import { withCors } from '@supabase/middleware/cors'
+ * import { withFeatureFlag } from '@supabase/middleware/feature-flag'
  *
  * export default {
  *   fetch: pipeline(

@@ -1,11 +1,11 @@
-# `@supabase/web-middleware/feature-flag`
+# `@supabase/middleware/feature-flag`
 
 Provider-agnostic feature-flag middleware. Pass any `evaluate` function — it's called per request, admits when the flag is on, rejects otherwise. Use it with PostHog, LaunchDarkly, Statsig, an env-var, a header, a database row — anything that can answer "is this flag enabled for this request?".
 
 > This is the worked example for authors. The implementation is short and well-commented — read [`with-feature-flag.ts`](./with-feature-flag.ts) alongside the [authoring guide](../README.md) to see how each piece of `defineMiddleware` lands in practice.
 
 ```ts
-import { withFeatureFlag } from '@supabase/web-middleware/feature-flag'
+import { withFeatureFlag } from '@supabase/middleware/feature-flag'
 
 export default {
   fetch: withFeatureFlag(
