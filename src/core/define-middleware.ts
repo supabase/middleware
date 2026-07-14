@@ -12,7 +12,7 @@ function warnUnhonoredThirdArg(): void {
   if (warnedThirdArg) return
   warnedThirdArg = true
   console.warn(
-    'web-middleware: a third fetch argument (the Workers ExecutionContext / waitUntil) was supplied but is not honored; it will be ignored. Supported entry signatures are (request) and (request, env).',
+    'middleware: a third fetch argument (the Workers ExecutionContext / waitUntil) was supplied but is not honored; it will be ignored. Supported entry signatures are (request) and (request, env).',
   )
 }
 
@@ -75,7 +75,7 @@ function warnUnhonoredThirdArg(): void {
  *
  * @example
  * ```ts
- * import { defineMiddleware } from '@supabase/web-middleware'
+ * import { defineMiddleware } from '@supabase/middleware'
  *
  * export const withFeatureFlag = defineMiddleware<
  *   'featureFlag',

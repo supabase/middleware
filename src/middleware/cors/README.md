@@ -1,11 +1,11 @@
-# `@supabase/web-middleware/cors`
+# `@supabase/middleware/cors`
 
 CORS for Web Fetch handlers — answers the `OPTIONS` preflight and stamps `Access-Control-*` headers onto your handler's response.
 
 > This is the worked example of the **response seam**. CORS is the textbook case for it: it acts on the request (preflight) _and_ the response (headers). `withCors` is written as an `async function*` so it can do both in one middleware — read [`with-cors.ts`](./with-cors.ts) alongside the [core README](../../core/README.md#response-seam-generator-middleware).
 
 ```ts
-import { withCors } from '@supabase/web-middleware/cors'
+import { withCors } from '@supabase/middleware/cors'
 
 export default {
   fetch: withCors(

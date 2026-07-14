@@ -1,5 +1,5 @@
 {
-  "name": "@supabase/web-middleware",
+  "name": "@supabase/middleware",
   "version": "0.1.0",
   "description": "Composable, type-safe middleware for Web Fetch handlers. A middleware is a (config, handler) wrapper that runs against the inbound Request, contributes a typed key to ctx, and either short-circuits or falls through — the same shape across every runtime and framework.",
   "keywords": [
@@ -8,13 +8,13 @@
     "edge",
     "supabase"
   ],
-  "homepage": "https://github.com/supabase/web-middleware#readme",
+  "homepage": "https://github.com/supabase/middleware#readme",
   "bugs": {
-    "url": "https://github.com/supabase/web-middleware/issues"
+    "url": "https://github.com/supabase/middleware/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/supabase/web-middleware.git"
+    "url": "git+https://github.com/supabase/middleware.git"
   },
   "license": "MIT",
   "author": "supabase",

@@ -143,7 +143,7 @@ function buildPreflightHeaders(
  *
  * @example
  * ```ts
- * import { withCors } from '@supabase/web-middleware/cors'
+ * import { withCors } from '@supabase/middleware/cors'
  *
  * export default {
  *   fetch: withCors(
