@@ -6,6 +6,9 @@
     "./feature-flag": "./src/middleware/feature-flag/index.ts",
     "./cors": "./src/middleware/cors/index.ts"
   },
+  "imports": {
+    "std-env": "npm:std-env@^4.2.0"
+  },
   "publish": {
     "include": ["src/**/*.ts", "README.md", "LICENSE"],
     "exclude": ["src/**/*.test.ts", "src/**/*.spec.ts"]

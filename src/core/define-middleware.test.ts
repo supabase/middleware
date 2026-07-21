@@ -4,16 +4,13 @@ import { withFeatureFlag } from '../middleware/feature-flag/with-feature-flag.js
 import { defineMiddleware } from './define-middleware.js'
 import { pipeline } from './pipeline.js'
 import type { BaseContext, FetchHandler } from './runtime.js'
+import { getEnv, seedContext } from './runtime.js'
 import type { Entry } from './types.js'
 
 const innerOk = async () => Response.json({ ok: true })
 
-/** Stand-in base context for tests that supply a context directly. */
-const runtime: BaseContext['_runtime'] = {
-  name: 'node',
-  getEnv: () => undefined,
-}
-const base: BaseContext = { _runtime: runtime }
+/** Marked base context for tests that supply a context directly. */
+const base: BaseContext = seedContext()
 
 const passing = <Key extends string, C extends object>(
   key: Key,
@@ -31,7 +28,7 @@ const rejecting = <Key extends string>(key: Key, status = 401) =>
   })
 
 describe('defineMiddleware', () => {
-  it('runs the middleware, contributes its key, and self-seeds ctx._runtime', async () => {
+  it('runs the middleware, contributes its key, and self-seeds its context', async () => {
     const withGreeting = defineMiddleware<
       'greeting',
       { who: string },
@@ -43,12 +40,12 @@ describe('defineMiddleware', () => {
     })
 
     const fetchHandler = withGreeting({ who: 'world' }, async (_req, ctx) =>
-      Response.json({ msg: ctx.greeting.hello, host: ctx._runtime.name }),
+      Response.json({ msg: ctx.greeting.hello }),
     )
 
     // Invoked as a bare fetch entry — ctx is seeded internally.
     const res = await fetchHandler(new Request('http://localhost/'))
-    expect(await res.json()).toEqual({ msg: 'world', host: 'node' })
+    expect(await res.json()).toEqual({ msg: 'world' })
   })
 
   const withGreeting = defineMiddleware<
@@ -70,7 +67,19 @@ describe('defineMiddleware', () => {
     const res = await (
       fetchHandler as (req: Request, ...a: unknown[]) => Promise<Response>
     )(new Request('http://localhost/'), { SECRET: 's' })
-    expect(await res.json()).toEqual({ keys: ['_runtime', 'greeting'] })
+    expect(await res.json()).toEqual({ keys: ['greeting'] })
+  })
+
+  it('captures a host-supplied env (arg 2) behind the importable getEnv', async () => {
+    const fetchHandler = withGreeting(async () =>
+      Response.json({ fromEnv: getEnv('__WM_BINDING__') ?? null }),
+    )
+
+    const res = await (
+      fetchHandler as (req: Request, ...a: unknown[]) => Promise<Response>
+    )(new Request('http://localhost/'), { __WM_BINDING__: 'bound' })
+    expect(await res.json()).toEqual({ fromEnv: 'bound' })
+    seedContext({}) // clear the stash so other tests see a clean slate
   })
 
   it('warns (does not throw) and ignores a third fetch argument (exec context)', async () => {
@@ -88,7 +97,7 @@ describe('defineMiddleware', () => {
       // Proceeds normally; the env (arg 2) still does not leak into ctx, and the
       // execution context (arg 3) is ignored rather than throwing.
       expect(res.status).toBe(200)
-      expect(await res.json()).toEqual({ keys: ['_runtime', 'greeting'] })
+      expect(await res.json()).toEqual({ keys: ['greeting'] })
     } finally {
       warn.mockRestore()
     }
@@ -604,10 +613,8 @@ describe('type guarantees (tsc-verified)', () => {
       withB(async (_req, ctx) => {
         const a: number = ctx.alpha.v
         const b: number = ctx.beta.v
-        const host: string = ctx._runtime.name
         void a
         void b
-        void host
         return Response.json({ ok: true })
       }),
     ) satisfies FetchHandler
@@ -648,15 +655,13 @@ describe('type guarantees (tsc-verified)', () => {
       { at: number }
     >({ key: 'stamp', run: () => async () => ({ stamp: { at: 1 } }) })
 
-    // withFeatureFlag (no prereq) wraps withStamp; the handler reads its own key,
-    // the prerequisite-free upstream needn't be declared — runtime is always there.
+    // withFeatureFlag (no prereq) wraps withStamp; the handler reads its own key
+    // with no anchor — cross-middleware deps flow through the `In` constraint.
     const _app = withFeatureFlag(
       { name: 'beta', evaluate: () => true },
       withStamp(async (_req, ctx) => {
         const at: number = ctx.stamp.at
-        const host: string = ctx._runtime.name
         void at
-        void host
         return Response.json({ ok: true })
       }),
     )

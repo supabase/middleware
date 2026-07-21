@@ -12,11 +12,23 @@ import * as featureFlag from './middleware/feature-flag/index.js'
  */
 describe('public API surface', () => {
   it('package root', () => {
-    expect(Object.keys(root).sort()).toEqual(['defineMiddleware', 'pipeline'])
+    expect(Object.keys(root).sort()).toEqual([
+      'defineMiddleware',
+      'getEnv',
+      'pipeline',
+      'runtimeName',
+      'seedContext',
+    ])
   })
 
   it('core subpath', () => {
-    expect(Object.keys(core).sort()).toEqual(['defineMiddleware', 'pipeline'])
+    expect(Object.keys(core).sort()).toEqual([
+      'defineMiddleware',
+      'getEnv',
+      'pipeline',
+      'runtimeName',
+      'seedContext',
+    ])
   })
 
   it('middleware subpaths', () => {

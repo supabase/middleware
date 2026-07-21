@@ -20,7 +20,7 @@ export default {
 }
 ```
 
-`pipeline` returns the outermost `(req, ctx) => Response` — **that is the `fetch` handler directly**, no wrapper. When the runtime invokes it, the framework detects a platform argument (Deno's connection info, a Workers `env`) and seeds `ctx._runtime` itself, so platform values never leak into `ctx`. The runtime is detected once at module load. Because everything is plain Web Fetch, the same stack runs unchanged across Deno, Cloudflare Workers, Bun, and Node.
+`pipeline` returns the outermost `(req, ctx) => Response` — **that is the `fetch` handler directly**, no wrapper. When the runtime invokes it, the framework detects a platform argument (Deno's connection info, a Workers `env`) and seeds a fresh context itself, so platform values never leak into `ctx` — the Workers env is captured behind the importable `getEnv` instead. Because everything is plain Web Fetch, the same stack runs unchanged across Deno, Cloudflare Workers, Bun, and Node.
 
 ## Install
 
@@ -41,7 +41,7 @@ allowBuilds:
 
 | Import                                  | What it does                                                                                                                     |
 | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `@supabase/middleware`              | `pipeline`, `defineMiddleware`, and the core types: `Entry`, `FetchHandler`, `Middleware`, `Conflict`, `Runtime`, `BaseContext`. |
+| `@supabase/middleware`              | `pipeline`, `defineMiddleware`, `getEnv`, `runtimeName`, `seedContext`, and the core types: `Entry`, `FetchHandler`, `Middleware`, `Conflict`, `BaseContext`. |
 | `@supabase/middleware/feature-flag` | Provider-agnostic feature flag — admit or short-circuit per request.                                                             |
 | `@supabase/middleware/cors`         | CORS — answers preflight and stamps response headers (the worked example of the response seam).                                  |
 
@@ -70,8 +70,7 @@ export default {
     ],
     async (_req, ctx) => {
       ctx.requestId   //  from withRequestId
-      ctx.featureFlag //  from withFeatureFlag
-      ctx._runtime    //  seeded automatically — ctx._runtime.getEnv('…'), ctx._runtime.name
+      ctx.featureFlag //  from withFeatureFlag — ctx holds middleware contributions, nothing else
       return new Response(null, { status: 200 })
     },
   ) satisfies FetchHandler,
@@ -85,14 +84,16 @@ Two type-level guarantees, with no runtime cost:
 
 ### Runtime & environment
 
-The framework seeds `ctx._runtime`, a portable facet middleware use instead of reaching for `Deno.env` / `process.env` / a Workers bindings object directly:
+Environment access is a plain import — middleware never reach for `Deno.env` / `process.env` / a Workers bindings object directly, and `ctx` carries no reserved framework key:
 
 ```ts
-ctx._runtime.name // 'deno' | 'cloudflare-workers' | 'node' | 'bun' | 'unknown'
-ctx._runtime.getEnv('SUPABASE_DB_URL') // string | undefined, resolved per host
+import { getEnv, runtimeName } from '@supabase/middleware'
+
+getEnv('SUPABASE_DB_URL') // string | undefined, resolved per host
+runtimeName // 'node' | 'deno' | 'bun' | 'workerd' | … ('' when unknown) — via std-env
 ```
 
-The host is detected once at module load. On Cloudflare Workers, `getEnv` reads the per-request bindings the runtime passes to `fetch`; elsewhere it reads the host's global (`Deno.env`, `process.env`).
+Host detection is delegated to [`std-env`](https://github.com/unjs/std-env) (which tracks the WinterCG Runtime Keys proposal), once at module load. On Cloudflare Workers, env bindings are not ambient — they arrive per request as the second `fetch` argument — so the entry call captures them module-scoped and `getEnv` reads them first, falling back to the host's global env (`process.env`, `Deno.env`). One consequence: on Workers, `getEnv` returns `undefined` at module top level, before the first request.
 
 Supported entry signatures are **`(request)`** and **`(request, env)`**. A third `fetch` argument — the Workers `ExecutionContext` (`waitUntil` / `passThroughOnException`) — is **not honored**: it's ignored with a one-time `console.warn`. The Deno target never passes one.
 

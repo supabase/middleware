@@ -65,5 +65,8 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.56.1",
     "vitest": "^4.0.18"
+  },
+  "dependencies": {
+    "std-env": "^4.2.0"
   }
 }
