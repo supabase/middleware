@@ -1,21 +1,33 @@
 /**
- * Runtime abstraction — portable environment access, detected once, up front.
+ * Runtime abstraction — portable environment access with no context facet.
  *
  * Reading configuration differs per host — `Deno.env.get` on Deno, `process.env`
  * on Node/Bun, a per-request bindings object on Cloudflare Workers.
- * {@link Runtime} normalizes that to a single `getEnv(key)`, carried on every
- * context at `ctx._runtime`. The leading underscore marks it as the framework's
- * one reserved base facet — distinct from the middleware-named keys
- * (`ctx.featureFlag`, …) that share the rest of the namespace.
+ * {@link getEnv} normalizes that to a single importable function:
+ *
+ * ```ts
+ * import { getEnv } from '@supabase/middleware'
+ *
+ * getEnv('SUPABASE_DB_URL') // string | undefined, resolved per host
+ * ```
+ *
+ * Host detection is delegated to [`std-env`](https://github.com/unjs/std-env)
+ * (which tracks the WinterCG Runtime Keys proposal) — {@link runtimeName}
+ * re-exports its detected name. On Workers, env bindings are not ambient: they
+ * arrive per request as the second `fetch` argument. The entry call captures
+ * that object module-scoped (see {@link seedContext}), and {@link getEnv} reads
+ * it first before falling back to the host's global env. The one consequence:
+ * on Workers, `getEnv` returns `undefined` at module top level, before the
+ * first request has been seen.
  *
  * There is **no entry wrapper**. A composed stack is used directly as the
  * runtime's `fetch` handler (`export default { fetch: withFoo(config, handler) }`).
  * When the host invokes the outermost handler, {@link defineMiddleware} detects
  * that the second argument is not an upstream context (via {@link isContext})
- * and seeds a fresh `{ _runtime }` itself — so a host-supplied `env` /
- * `ServeHandlerInfo` is never merged into `ctx`. The runtime *name* is detected
- * a single time at module load; per-request bindings (Workers `env`) are
- * captured from the entry call.
+ * and seeds a fresh context itself — so a host-supplied `env` /
+ * `ServeHandlerInfo` is never merged into `ctx`. The seeded context is empty
+ * except for a non-enumerable-to-`Object.keys` symbol marker: `ctx` carries
+ * middleware contributions and nothing else.
  *
  * The request body is made re-readable on `req` itself (see {@link bufferRequest})
  * rather than via a `ctx` key, so the body stays a property of the request.
@@ -23,37 +35,70 @@
  * @packageDocumentation
  */
 
-/** Runtimes we recognize for environment access. */
-export type RuntimeName =
-  | 'deno'
-  | 'cloudflare-workers'
-  | 'node'
-  | 'bun'
-  | 'unknown'
+import { env as stdEnv, isDeno, runtime } from 'std-env'
+import type { RuntimeName } from 'std-env'
+
+export type { RuntimeName } from 'std-env'
 
 /**
- * The portable runtime facet carried at `ctx._runtime`. `getEnv` resolves a
- * configuration value the same way regardless of host, so middleware never
- * branch on `Deno` vs `process` vs a Workers bindings object.
+ * The host's detected runtime name, re-exported from `std-env` (WinterCG
+ * Runtime Keys: `'node' | 'deno' | 'bun' | 'workerd' | 'edge-light' | …`, or
+ * `''` when unknown). Detected once at module load.
  */
-export interface Runtime {
-  /** Which host this is running on. Detected once at module load. */
-  readonly name: RuntimeName
-  /** Resolve an environment value (env var or Workers binding). */
-  getEnv(key: string): string | undefined
+export const runtimeName: RuntimeName = runtime
+
+/**
+ * Platform-provided bindings, captured module-scoped from the entry call. On
+ * Cloudflare Workers this is the per-request `env` object (same object for
+ * every request in an isolate); on Deno it is the `ServeHandlerInfo` (whose
+ * keys never look like env vars, so lookups simply fall through).
+ */
+let platformEnv: Record<string, unknown> | undefined
+
+/**
+ * Resolve an environment value the same way regardless of host, so middleware
+ * never branch on `Deno` vs `process` vs a Workers bindings object.
+ *
+ * Resolution order:
+ * 1. the platform object captured at the entry call (Workers bindings),
+ * 2. `process.env` where a `process` global exists (Node, Bun, Deno 2,
+ *    Workers with `nodejs_compat`), via `std-env`,
+ * 3. `Deno.env.get` on Deno hosts without a populated `process.env`.
+ *
+ * On Workers, bindings are per-request, so this returns `undefined` at module
+ * top level until the first request has been handled.
+ */
+export function getEnv(key: string): string | undefined {
+  if (platformEnv) {
+    const bound = platformEnv[key]
+    if (typeof bound === 'string') return bound
+  }
+  const fromStd = stdEnv[key]
+  if (fromStd !== undefined) return fromStd
+  if (isDeno) {
+    const deno = (globalThis as { Deno?: { env?: { get(k: string): string | undefined } } }).Deno
+    return deno?.env?.get(key)
+  }
+  return undefined
 }
 
 /**
- * The lower bound of every context — the framework's single reserved facet. The
- * outermost middleware seeds it on the entry call; each middleware widens the
- * context with its own contributed key. Anchoring composition to this base is
- * what lets `Base` inference flow through nested middleware (every produced
- * handler is a single `(req, ctx)` signature).
+ * Marks a context object seeded by this framework, so an entry call can tell an
+ * upstream context apart from a host-supplied platform argument (a Workers
+ * `env`, a Deno `ServeHandlerInfo`) occupying the same positional slot.
+ * `Symbol.for` (the global registry) so contexts cross module instances — e.g.
+ * the CJS and ESM builds loaded side by side — and still recognize each other.
  */
-export interface BaseContext {
-  /** Portable runtime facet — environment access + host name. Reserved key. */
-  readonly _runtime: Runtime
-}
+const CONTEXT_MARK = Symbol.for('@supabase/middleware:context')
+
+/**
+ * The lower bound of every context. Structurally empty — the framework reserves
+ * no keys; every property on `ctx` is a middleware contribution. (At runtime a
+ * seeded context carries a symbol marker so the entry call can distinguish it
+ * from a platform argument; the marker is invisible to `Object.keys` iteration
+ * of string keys and to the type.)
+ */
+export type BaseContext = object
 
 /** A composed handler: request + an accumulated context `>= BaseContext`. */
 export type Handler<Ctx extends BaseContext = BaseContext> = (
@@ -73,83 +118,31 @@ export type FetchHandler = (
   ctx?: BaseContext,
 ) => Promise<Response>
 
-/** Best-effort host detection. Deno is checked first because it also defines `navigator`. Exported for testing. */
-export function detectRuntimeName(): RuntimeName {
-  const g = globalThis as Record<string, unknown>
-  if (typeof g.Deno !== 'undefined') return 'deno'
-  const nav = g.navigator as { userAgent?: string } | undefined
-  if (nav?.userAgent === 'Cloudflare-Workers') return 'cloudflare-workers'
-  const proc = g.process as { versions?: Record<string, string> } | undefined
-  if (proc?.versions?.bun) return 'bun'
-  if (proc?.versions?.node) return 'node'
-  return 'unknown'
-}
-
-/** Detected once, up front. */
-const RUNTIME_NAME: RuntimeName = detectRuntimeName()
-
 /**
- * Build a `getEnv` for a host. On Workers the bindings live on the per-request
- * `env` object passed as the second `fetch` argument, threaded in here via
- * `platformArgs[0]`; elsewhere they come from a global. Exported (and
- * parametrized by `name`) so each runtime's branch is unit-testable, not just the
- * one that happens to match the test runner.
+ * Seed a fresh base context for an entry call, capturing the host's second
+ * `fetch` argument (a Workers `env`, a Deno `ServeHandlerInfo`, …) as the
+ * module-scoped platform env for {@link getEnv}. The platform value itself is
+ * never merged into `ctx`.
+ *
+ * Public so a host embedding the engine (e.g. `@supabase/server`) can mint a
+ * valid upstream context and spread its own keys onto it.
  */
-export function makeGetEnv(
-  name: RuntimeName,
-  platformArgs: readonly unknown[],
-): (key: string) => string | undefined {
-  const g = globalThis as Record<string, unknown>
-  switch (name) {
-    case 'deno': {
-      const deno = g.Deno as { env?: { get(k: string): string | undefined } }
-      return (k) => deno?.env?.get(k)
-    }
-    case 'node':
-    case 'bun': {
-      const proc = g.process as { env?: Record<string, string | undefined> }
-      return (k) => proc?.env?.[k]
-    }
-    case 'cloudflare-workers': {
-      const env = platformArgs[0] as Record<string, unknown> | undefined
-      return (k) => {
-        const v = env?.[k]
-        return typeof v === 'string' ? v : undefined
-      }
-    }
-    default:
-      return () => undefined
+export function seedContext(platformArg?: unknown): BaseContext {
+  if (platformArg && typeof platformArg === 'object') {
+    platformEnv = platformArg as Record<string, unknown>
   }
-}
-
-/**
- * Seed a fresh base context for an entry call. `platformArgs` is the host's
- * second `fetch` argument (a Workers `env`, a Deno `ServeHandlerInfo`, …), used
- * only to source bindings — never merged into `ctx`. A third argument (the
- * Workers `ExecutionContext`) is rejected upstream as not implemented.
- */
-export function seedContext(platformArgs: readonly unknown[]): BaseContext {
-  return {
-    _runtime: {
-      name: RUNTIME_NAME,
-      getEnv: makeGetEnv(RUNTIME_NAME, platformArgs),
-    },
-  }
+  return { [CONTEXT_MARK]: true }
 }
 
 /**
  * Distinguish an upstream context (passed by a parent middleware) from a
  * host-supplied platform argument (an `env` / connection-info object the runtime
- * puts in the same positional slot). The `_runtime` facet flows by reference
- * through every merge, so checking for it is reliable across the stack.
+ * puts in the same positional slot). The symbol marker set by {@link seedContext}
+ * flows by reference through every `{ ...upstream }` merge (spread copies
+ * enumerable own symbols), so checking for it is reliable across the stack.
  */
 export function isContext(value: unknown): value is BaseContext {
-  return (
-    !!value &&
-    typeof value === 'object' &&
-    typeof (value as { _runtime?: { getEnv?: unknown } })._runtime?.getEnv ===
-      'function'
-  )
+  return !!value && typeof value === 'object' && CONTEXT_MARK in value
 }
 
 /** Body-reading `Request` methods the buffered proxy re-implements from a single cached read. */

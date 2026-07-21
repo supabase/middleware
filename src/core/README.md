@@ -2,13 +2,15 @@
 
 A **middleware** is a `(config, handler)` wrapper — `withFoo(config, handler)` — that runs against the inbound `Request` and contributes its own typed key to `ctx`. Each one produces a single `(req, ctx) => Response` function. Stack middleware by direct nesting; the innermost handler sees a flat `ctx` aggregated from every wrapper around it. **The outermost is the runtime's `fetch` handler directly — no wrapper, no separate composer.**
 
-Everything is plain Web Fetch, so the same stack runs unchanged across every runtime — Deno, Workers, Bun, Node — and inside any framework that can surface a `Request`. When the host invokes the outermost handler, the middleware detects a host-supplied platform argument (vs. an upstream context) and seeds `ctx._runtime` itself.
+Everything is plain Web Fetch, so the same stack runs unchanged across every runtime — Deno, Workers, Bun, Node — and inside any framework that can surface a `Request`. When the host invokes the outermost handler, the middleware detects a host-supplied platform argument (vs. an upstream context), seeds a fresh context itself, and captures the platform env behind the importable `getEnv`.
 
 The package root exports:
 
 - **`defineMiddleware`** — for _authors_ writing a new middleware. See the [authoring guide](../middleware/README.md).
 - **`Middleware`** — the type a `defineMiddleware` call produces.
-- **`Runtime` / `RuntimeName` / `BaseContext` / `Handler`** — the runtime/context types.
+- **`getEnv` / `runtimeName`** — portable environment access and the std-env-detected host name.
+- **`seedContext`** — mint a marked base context (for hosts embedding the engine).
+- **`RuntimeName` / `BaseContext` / `Handler`** — the runtime/context types.
 - **`FetchHandler`** — the type-only anchor (`… satisfies FetchHandler`) that turns on ambient accumulation + collision detection on the outermost handler.
 - **`Conflict`** — the sentinel type surfaced on a key collision.
 
@@ -39,12 +41,11 @@ runtime behavior, just a flat readable form.
 
 ## The `ctx` shape
 
-Inside a wrapped handler, `ctx` is a flat intersection — the framework seeds the one reserved `_runtime` facet, and each middleware contributes a typed key:
+Inside a wrapped handler, `ctx` is a flat intersection of middleware contributions — the framework reserves no keys (environment access is the importable `getEnv`, not a context facet):
 
-| Key                                  | Set by                              | Mutability              |
-| ------------------------------------ | ----------------------------------- | ----------------------- |
-| `ctx._runtime` (`name`, `getEnv`)    | seeded at the entry call (reserved) | read-only               |
-| `ctx.<key>` (e.g. `ctx.featureFlag`) | the corresponding middleware        | read-only by convention |
+| Key                                  | Set by                       | Mutability              |
+| ------------------------------------ | ---------------------------- | ----------------------- |
+| `ctx.<key>` (e.g. `ctx.featureFlag`) | the corresponding middleware | read-only by convention |
 
 > **Reading the body.** Read it off **`req`** as usual — `req.text()` / `req.json()` /
 > `req.arrayBuffer()` / `req.bytes()`. The framework hands every layer a buffered
@@ -105,7 +106,6 @@ export default {
       withMyMiddleware({ ... }),
     ],
     async (_req, ctx) => {
-      ctx._runtime      // seeded at the entry call
       ctx.featureFlag  // from withFeatureFlag
       ctx.myMiddleware // from withMyMiddleware
       return Response.json({ ok: true })
@@ -124,7 +124,9 @@ export default {
 | `FetchHandler`                              | Type-only anchor (`… satisfies FetchHandler`) for ambient accumulation + collision detection. |
 | `Conflict<Key>`                             | Sentinel string a middleware's `ctx` resolves to when it would shadow an upstream key.        |
 | `Middleware<Key, Config, In, Contribution>` | The shape of a middleware produced by `defineMiddleware`.                                     |
-| `Runtime` / `RuntimeName` / `BaseContext`   | The runtime facet at `ctx._runtime`, host names, and the base context type.                   |
+| `getEnv(key)` / `runtimeName`               | Portable environment access (platform env first, host env fallback) and the std-env host name. |
+| `seedContext(platformArg?)`                 | Mint a marked base context — for hosts embedding the engine (e.g. `@supabase/server`).        |
+| `RuntimeName` / `BaseContext`               | The std-env host-name union and the base context type.                                        |
 
 ## See also
 

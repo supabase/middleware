@@ -51,14 +51,15 @@ function warnUnhonoredThirdArg(): void {
  * handler with no wrapper** — `export default { fetch: withFoo(config, handler) }`.
  * When the host invokes it, the second argument is a platform value (a Workers
  * `env`, a Deno `ServeHandlerInfo`), not an upstream context; the wrapper detects
- * this via {@link isContext} and seeds a fresh `{ _runtime }` instead of merging
- * it, so platform arguments never leak into `ctx`.
+ * this via {@link isContext} and seeds a fresh context instead of merging it, so
+ * platform arguments never leak into `ctx` — they are only captured as the
+ * module-scoped platform env behind the importable `getEnv`.
  *
  * Typing:
  *
  * - **Prerequisite-free middleware are entry-able.** Their produced handler has
  *   an optional `ctx`, so it satisfies a bare `(req) => Response` fetch entry and
- *   self-seeds `ctx._runtime`.
+ *   self-seeds a fresh context.
  * - **Middleware with `In` prerequisites require `ctx`.** They can only be nested
  *   inside a wrapper that supplies those keys — never a bare entry — which keeps
  *   the prerequisite from being a type-lie at the top level.
@@ -148,7 +149,7 @@ export function defineMiddleware<
         // silently dropping it, and continue (the Deno target never passes one).
         if (rest.length > 0) warnUnhonoredThirdArg()
         workingReq = req.body ? bufferRequest(req) : req
-        upstream = seedContext([maybeCtx])
+        upstream = seedContext(maybeCtx)
       }
 
       const runInner = handler
@@ -256,7 +257,7 @@ export type NoConflict<Key extends string, Base> =
  * The produced handler shape.
  *
  * - **No prerequisites** (`In` empty): `ctx` is optional, so the handler is
- *   directly usable as a runtime `fetch` entry and self-seeds `ctx._runtime`.
+ *   directly usable as a runtime `fetch` entry and self-seeds its context.
  * - **With prerequisites**: `ctx` is required, so the middleware must be nested
  *   inside a wrapper that provides those keys.
  *

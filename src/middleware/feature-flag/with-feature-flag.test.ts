@@ -120,15 +120,15 @@ describe('withFeatureFlag', () => {
     expect(await res.json()).toEqual({ variant: 'a' })
   })
 
-  it('self-seeds ctx._runtime when invoked as a bare fetch entry', async () => {
+  it('self-seeds its context when invoked as a bare fetch entry', async () => {
     const handler = withFeatureFlag(
       { name: 'beta', evaluate: () => true },
-      async (_req, ctx) => Response.json({ host: ctx._runtime.name }),
+      async (_req, ctx) => Response.json({ keys: Object.keys(ctx) }),
     )
 
     // Called directly, the way a runtime invokes `export default { fetch }`.
     const res = await handler(new Request('http://localhost/'))
-    // Detected at module load; this suite runs on Node.
-    expect(await res.json()).toEqual({ host: 'node' })
+    // ctx holds only middleware contributions — no reserved framework key.
+    expect(await res.json()).toEqual({ keys: ['featureFlag'] })
   })
 })

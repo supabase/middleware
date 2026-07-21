@@ -1,13 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { defineMiddleware } from './define-middleware.js'
-import type { BaseContext, FetchHandler } from './runtime.js'
+import type { FetchHandler } from './runtime.js'
 import { pipeline } from './pipeline.js'
 
 const innerOk = async () => Response.json({ ok: true })
-
-const runtime: BaseContext['_runtime'] = { name: 'node', getEnv: () => undefined }
-void runtime
 
 const passing = <Key extends string, C extends object>(key: Key, contribution: C) =>
   defineMiddleware<Key, void, Record<never, never>, C>({
@@ -22,18 +19,18 @@ const rejecting = <Key extends string>(key: Key, status = 401) =>
   })
 
 describe('pipeline', () => {
-  it('composes entries in order, contributes keys, self-seeds ctx._runtime', async () => {
+  it('composes entries in order, contributes keys, self-seeds its context', async () => {
     const withA = passing('alpha', { v: 1 })
     const withB = passing('beta', { v: 2 })
 
     const handler = pipeline(
       [withA(), withB()],
       async (_req, ctx) =>
-        Response.json({ alpha: ctx.alpha.v, beta: ctx.beta.v, host: ctx._runtime.name }),
+        Response.json({ alpha: ctx.alpha.v, beta: ctx.beta.v }),
     )
 
     const res = await handler(new Request('http://localhost/'))
-    expect(await res.json()).toEqual({ alpha: 1, beta: 2, host: 'node' })
+    expect(await res.json()).toEqual({ alpha: 1, beta: 2 })
   })
 
   it('pre-applies required config', async () => {
@@ -155,10 +152,8 @@ describe('type guarantees (tsc-verified)', () => {
       async (_req, ctx) => {
         const a: number = ctx.alpha.v
         const b: number = ctx.beta.v
-        const host: string = ctx._runtime.name
         void a
         void b
-        void host
         return Response.json({ ok: true })
       },
     ) satisfies FetchHandler
@@ -205,6 +200,6 @@ describe('type guarantees (tsc-verified)', () => {
     const res = await (
       handler as (req: Request, ...a: unknown[]) => Promise<Response>
     )(new Request('http://localhost/'), { SECRET: 's' })
-    expect(await res.json()).toEqual({ keys: ['_runtime', 'a'] })
+    expect(await res.json()).toEqual({ keys: ['a'] })
   })
 })
