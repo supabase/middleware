@@ -26,7 +26,10 @@ export default {
   fetch: pipeline(
     [
       withCors({}),
-      withFeatureFlag({ name: 'beta', evaluate: (req) => req.headers.has('x-beta') }),
+      withFeatureFlag({
+        name: 'beta',
+        evaluate: (req) => req.headers.has('x-beta'),
+      }),
     ],
     async (req, ctx) => Response.json({ flag: ctx.featureFlag.name }),
   ),

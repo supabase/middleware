@@ -13,7 +13,10 @@ export default {
   fetch: pipeline(
     [
       withCors({}),
-      withFeatureFlag({ name: 'beta', evaluate: (req) => req.headers.has('x-beta') }),
+      withFeatureFlag({
+        name: 'beta',
+        evaluate: (req) => req.headers.has('x-beta'),
+      }),
     ],
     async (_req, ctx) => Response.json({ flag: ctx.featureFlag.name }),
   ),
@@ -55,7 +58,12 @@ import type { FetchHandler } from '@supabase/web-middleware'
 import { withFeatureFlag } from '@supabase/web-middleware/feature-flag'
 
 // A middleware is just a `defineMiddleware` call — bundled or your own.
-const withRequestId = defineMiddleware<'requestId', void, Record<never, never>, string>({
+const withRequestId = defineMiddleware<
+  'requestId',
+  void,
+  Record<never, never>,
+  string
+>({
   key: 'requestId',
   run: () => async (req) => ({
     requestId: req.headers.get('x-request-id') ?? crypto.randomUUID(),
@@ -65,13 +73,16 @@ const withRequestId = defineMiddleware<'requestId', void, Record<never, never>, 
 export default {
   fetch: pipeline(
     [
-      withRequestId(),    // no config — still returns an Entry
-      withFeatureFlag({ name: 'beta', evaluate: (req) => req.headers.has('x-beta') }),
+      withRequestId(), // no config — still returns an Entry
+      withFeatureFlag({
+        name: 'beta',
+        evaluate: (req) => req.headers.has('x-beta'),
+      }),
     ],
     async (_req, ctx) => {
-      ctx.requestId   //  from withRequestId
+      ctx.requestId //  from withRequestId
       ctx.featureFlag //  from withFeatureFlag
-      ctx._runtime    //  seeded automatically — ctx._runtime.getEnv('…'), ctx._runtime.name
+      ctx._runtime //  seeded automatically — ctx._runtime.getEnv('…'), ctx._runtime.name
       return new Response(null, { status: 200 })
     },
   ) satisfies FetchHandler,
@@ -144,6 +155,42 @@ run: (config) =>
 The `yield` expression resolves to the downstream `Response` (typed as `Response`, inferred — no annotation). `yield` the contribution at most once — `yield` means "run downstream and hand me the response." To short-circuit (handler never runs), `return new Response(...)`, exactly as a plain request-side middleware does. `try/finally` around the `yield` gives request-spanning cleanup; `try/catch` can turn a downstream throw into a `Response`.
 
 This is the **one** place the "request-side" guarantee is relaxed, and writing `function*` is the visible, opt-in signal — the 95% plain-`async` path is unchanged. [`/cors`](./src/middleware/cors/) is the worked example.
+
+## Interop & tooling (optional descriptors)
+
+The composition rules above are enforced by the **type system** — collisions and out-of-order prerequisites fail to compile. That is the whole story for a TypeScript app. It leaves nothing at runtime for registries, doc/LLM tooling, or a stack assembled dynamically or from plain JavaScript to read.
+
+An **opt-in descriptor layer** closes that gap without changing how anything executes. Give a middleware an `id` and it carries a machine-readable `~middleware` descriptor — the same shape the `@web-middleware/core` reference implementation stamps, so a middleware from either package is legible to the same tooling:
+
+```ts
+export const withRequireRole = defineMiddleware<
+  'role',
+  Role,
+  { jwtClaims: Claims },
+  Role
+>({
+  key: 'role',
+  id: 'require-role', // ← attaches the descriptor
+  requires: ['jwtClaims'], // ← runtime mirror of the compile-time `In` (type erasure removes it)
+  run: (role) => async (_req, ctx) => {
+    /* … */
+  },
+})
+
+getDescriptor(withRequireRole('admin'))
+// { version: 1, id: 'require-role', requires: ['jwtClaims'], provides: ['role'] }
+```
+
+With descriptors present, `pipeline` gains a **compose-time backstop**: prerequisite ordering and write-once contributions are checked when the stack is built, throwing a coded `MiddlewareError` (`WM_PREREQUISITE_MISSING`, `WM_DUPLICATE_PROVISION`) _before the first request_. For TypeScript consumers this only re-confirms what the compiler proved; its value is catching dynamically- or JS-assembled stacks the compiler never saw. Middleware without a descriptor are ignored, so the check is fully opt-in.
+
+Everything here is additive:
+
+- **No `id`, no descriptor.** Un-annotated middleware behave exactly as before.
+- **Versioned.** A reader ignores a descriptor whose `version` it doesn't understand rather than failing (`getDescriptor` returns `undefined`), so newer producers never break older consumers.
+- **`annotate(fn, { id, requires, provides })`** stamps the same descriptor onto hand-written middleware.
+- **Static manifest.** [`middleware.manifest.json`](./middleware.manifest.json) (validated by [`middleware.manifest.schema.json`](./middleware.manifest.schema.json)) describes the package's factories _without executing them_ — what registries and tooling consume.
+
+Exposed from the root and `/core`: `annotate`, `getDescriptor`, `assertComposable`, `DESCRIPTOR_VERSION`, `MiddlewareError`, `MiddlewareErrorCode`, and the `MiddlewareDescriptor` / `DescriptorInput` types.
 
 ## Docs
 

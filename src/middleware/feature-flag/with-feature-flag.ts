@@ -115,6 +115,7 @@ export const withFeatureFlag = defineMiddleware<
   FeatureFlagContribution
 >({
   key: 'featureFlag',
+  id: 'feature-flag',
   /**
    * Two-stage function. The outer `(config) =>` runs once when the consumer
    * constructs the middleware — initialize per-instance state here (clients,

@@ -1,6 +1,9 @@
 import type { Conflict, ConfigArgs, Entry } from './types.js'
 import type { BaseContext } from './runtime.js'
 import { bufferRequest, isContext, seedContext } from './runtime.js'
+import type { ContextKeys, MiddlewareDescriptor } from './descriptor.js'
+import { buildDescriptor, stampDescriptor } from './descriptor.js'
+import { MiddlewareError, MiddlewareErrorCode } from './errors.js'
 
 /**
  * Warn (once per process) that a host passed a third `fetch` argument — the
@@ -100,6 +103,22 @@ export function defineMiddleware<
   Contribution = unknown,
 >(spec: {
   key: Key
+  /**
+   * Optional stable identity. Supplying it attaches the opt-in `~middleware`
+   * descriptor (used by `pipeline`'s runtime composition checks and by
+   * tooling/registries) and prefixes composition diagnostics. Omit it and the
+   * middleware behaves exactly as before, with no descriptor — metadata is
+   * strictly additive.
+   */
+  id?: string
+  /**
+   * Runtime prerequisites: the context keys this middleware reads. This mirrors
+   * the compile-time `In`, which type erasure removes at runtime; declaring the
+   * keys here lets `pipeline` and tooling enforce ordering without the compiler
+   * (for dynamically- or plain-JS-assembled stacks). Bound to `In`'s keys, so a
+   * stale key is a compile error. Only meaningful alongside `id`.
+   */
+  requires?: readonly ContextKeys<In>[]
   run: (
     config: Config,
   ) => (
@@ -113,6 +132,21 @@ export function defineMiddleware<
         Response
       >
 }): Middleware<Key, Config, In, Contribution> {
+  // Built once per middleware kind (config-independent), then shared — one
+  // frozen instance stamped on the factory, every entry, and every produced
+  // handler. `undefined` when the author declared no `id`: metadata is opt-in,
+  // so an un-`id`'d middleware carries no `~middleware` at all.
+  const descriptor: MiddlewareDescriptor | undefined =
+    spec.id !== undefined
+      ? buildDescriptor({
+          id: spec.id,
+          requires: spec.requires,
+          provides: [spec.key],
+        })
+      : undefined
+  const stamp = <T extends object>(target: T): T =>
+    descriptor ? stampDescriptor(target, descriptor) : target
+
   const callable = (...args: unknown[]) => {
     const lastArg = args[args.length - 1]
 
@@ -121,9 +155,14 @@ export function defineMiddleware<
     // can be passed to `pipeline` directly: `pipeline([withFoo(cfg)], handler)`.
     if (args.length === 0 || typeof lastArg !== 'function') {
       const config = (args.length > 0 ? args[0] : undefined) as Config
-      const wrap = (handler: (req: Request, ctx: object) => Promise<Response>) =>
-        callable(config, handler) as unknown as (req: Request, ctx: object) => Promise<Response>
-      return wrap as Entry<Key, In, Contribution>
+      const wrap = (
+        handler: (req: Request, ctx: object) => Promise<Response>,
+      ) =>
+        callable(config, handler) as unknown as (
+          req: Request,
+          ctx: object,
+        ) => Promise<Response>
+      return stamp(wrap) as Entry<Key, In, Contribution>
     }
 
     // Handler call — last arg is a function.
@@ -131,7 +170,11 @@ export function defineMiddleware<
     const config = (args.length >= 2 ? args[0] : undefined) as Config
     const handler = lastArg as (req: Request, ctx: object) => Promise<Response>
     const inner = spec.run(config)
-    return async (req: Request, maybeCtx?: object, ...rest: unknown[]) => {
+    const composed = async (
+      req: Request,
+      maybeCtx?: object,
+      ...rest: unknown[]
+    ) => {
       // A parent middleware passes a real context; the host passes a platform
       // value (env / connection info) in the same slot. At the entry (the
       // latter), seed a fresh context so platform arguments never reach `ctx`,
@@ -162,7 +205,9 @@ export function defineMiddleware<
       if (!isAsyncGenerator(produced)) {
         const result = await produced
         if (result instanceof Response) return result
-        return callDownstream(contributionOf(result, spec.key))
+        return callDownstream(
+          contributionOf(result, spec.key, spec.id ?? spec.key),
+        )
       }
 
       // Generator middleware (the escape hatch): `yield` is the seam between the
@@ -176,7 +221,11 @@ export function defineMiddleware<
         if (!first.done) await gen.return(undefined) // run any `finally`
         return first.value
       }
-      const contribution = contributionOf(first.value, spec.key)
+      const contribution = contributionOf(
+        first.value,
+        spec.key,
+        spec.id ?? spec.key,
+      )
       // A generator that `return`ed (rather than `yield`ed) the contribution has
       // no seam — treat it like the plain path.
       if (first.done) return callDownstream(contribution)
@@ -195,8 +244,9 @@ export function defineMiddleware<
       if (!resumed.done) await gen.return(undefined) // ignore extra yields, run `finally`
       return resumed.value instanceof Response ? resumed.value : response
     }
+    return stamp(composed)
   }
-  return callable as unknown as Middleware<Key, Config, In, Contribution>
+  return stamp(callable) as unknown as Middleware<Key, Config, In, Contribution>
 }
 
 /**
@@ -220,10 +270,12 @@ function isAsyncGenerator(
  * bugs the type system can't, e.g. a typo in the key that slipped past
  * excess-property checks, or a generator that produced nothing.
  */
-function contributionOf(result: unknown, key: string): unknown {
+function contributionOf(result: unknown, key: string, id: string): unknown {
   if (result === null || typeof result !== 'object' || !(key in result)) {
-    throw new Error(
-      `defineMiddleware '${key}': run() must return or yield an object carrying the key '${key}'`,
+    throw new MiddlewareError(
+      MiddlewareErrorCode.contributionMissing,
+      `'${id}': run() must return or yield an object carrying the key '${key}'`,
+      { middlewareId: id, key },
     )
   }
   return (result as Record<string, unknown>)[key]

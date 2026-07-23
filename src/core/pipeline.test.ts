@@ -6,10 +6,16 @@ import { pipeline } from './pipeline.js'
 
 const innerOk = async () => Response.json({ ok: true })
 
-const runtime: BaseContext['_runtime'] = { name: 'node', getEnv: () => undefined }
+const runtime: BaseContext['_runtime'] = {
+  name: 'node',
+  getEnv: () => undefined,
+}
 void runtime
 
-const passing = <Key extends string, C extends object>(key: Key, contribution: C) =>
+const passing = <Key extends string, C extends object>(
+  key: Key,
+  contribution: C,
+) =>
   defineMiddleware<Key, void, Record<never, never>, C>({
     key,
     run: () => async () => ({ [key]: contribution }) as { [K in Key]: C },
@@ -26,10 +32,12 @@ describe('pipeline', () => {
     const withA = passing('alpha', { v: 1 })
     const withB = passing('beta', { v: 2 })
 
-    const handler = pipeline(
-      [withA(), withB()],
-      async (_req, ctx) =>
-        Response.json({ alpha: ctx.alpha.v, beta: ctx.beta.v, host: ctx._runtime.name }),
+    const handler = pipeline([withA(), withB()], async (_req, ctx) =>
+      Response.json({
+        alpha: ctx.alpha.v,
+        beta: ctx.beta.v,
+        host: ctx._runtime.name,
+      }),
     )
 
     const res = await handler(new Request('http://localhost/'))
@@ -66,9 +74,8 @@ describe('pipeline', () => {
       ),
     ) satisfies FetchHandler
 
-    const flatHandler = pipeline(
-      [withA(), withB()],
-      async (_req, ctx) => Response.json({ alpha: ctx.alpha.v, beta: ctx.beta.v }),
+    const flatHandler = pipeline([withA(), withB()], async (_req, ctx) =>
+      Response.json({ alpha: ctx.alpha.v, beta: ctx.beta.v }),
     )
 
     const [nestedRes, flatRes] = await Promise.all([
@@ -102,9 +109,8 @@ describe('pipeline', () => {
       }),
     })
 
-    const handler = pipeline(
-      [withAuth(), withProfile()],
-      async (_req, ctx) => Response.json({ name: ctx.profile.displayName }),
+    const handler = pipeline([withAuth(), withProfile()], async (_req, ctx) =>
+      Response.json({ name: ctx.profile.displayName }),
     )
 
     const res = await handler(new Request('http://localhost/'))
@@ -150,18 +156,15 @@ describe('type guarantees (tsc-verified)', () => {
     const withA = passing('alpha', { v: 1 })
     const withB = passing('beta', { v: 2 })
 
-    const _app = pipeline(
-      [withA(), withB()],
-      async (_req, ctx) => {
-        const a: number = ctx.alpha.v
-        const b: number = ctx.beta.v
-        const host: string = ctx._runtime.name
-        void a
-        void b
-        void host
-        return Response.json({ ok: true })
-      },
-    ) satisfies FetchHandler
+    const _app = pipeline([withA(), withB()], async (_req, ctx) => {
+      const a: number = ctx.alpha.v
+      const b: number = ctx.beta.v
+      const host: string = ctx._runtime.name
+      void a
+      void b
+      void host
+      return Response.json({ ok: true })
+    }) satisfies FetchHandler
     void _app
   })
 

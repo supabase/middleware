@@ -4,6 +4,8 @@
  * @packageDocumentation
  */
 
+import type { MiddlewareDescriptor } from './descriptor.js'
+
 /**
  * Sentinel type used in a middleware's wrapper signature to surface a key
  * collision with the upstream context as a TypeScript error at the call site.
@@ -19,7 +21,9 @@ export type Conflict<Key extends string> =
  * Used by both `defineMiddleware` (to type the config-only overload) and
  * `pipeline` (internally).
  */
-export type ConfigArgs<Config> = undefined extends Config ? [config?: Config] : [config: Config]
+export type ConfigArgs<Config> = undefined extends Config
+  ? [config?: Config]
+  : [config: Config]
 
 type AnyFetchHandler = (req: Request, ctx: object) => Promise<Response>
 
@@ -36,4 +40,9 @@ export interface Entry<Key extends string, In extends object, Contribution> {
   readonly __key?: Key
   readonly __in?: In
   readonly __contribution?: Contribution
+  /**
+   * Optional machine-readable metadata, present when the middleware was defined
+   * with an `id`. `pipeline` and tooling read it; composition never requires it.
+   */
+  readonly '~middleware'?: MiddlewareDescriptor
 }

@@ -1,0 +1,18 @@
+{
+  "$schema": "./middleware.manifest.schema.json",
+  "protocol": "0.1-draft",
+  "descriptorVersion": 1,
+  "package": "@supabase/web-middleware",
+  "middleware": [
+    {
+      "id": "cors",
+      "export": "./cors#withCors",
+      "provides": ["cors"]
+    },
+    {
+      "id": "feature-flag",
+      "export": "./feature-flag#withFeatureFlag",
+      "provides": ["featureFlag"]
+    }
+  ]
+}

@@ -11,12 +11,26 @@ import * as featureFlag from './middleware/feature-flag/index.js'
  * disappearing in a refactor.
  */
 describe('public API surface', () => {
+  // Value exports of the root and core surfaces are identical (root is a
+  // curated re-export of core): the composition primitives plus the additive
+  // descriptor/interop layer.
+  const expected = [
+    'DESCRIPTOR_VERSION',
+    'MiddlewareError',
+    'MiddlewareErrorCode',
+    'annotate',
+    'assertComposable',
+    'defineMiddleware',
+    'getDescriptor',
+    'pipeline',
+  ]
+
   it('package root', () => {
-    expect(Object.keys(root).sort()).toEqual(['defineMiddleware', 'pipeline'])
+    expect(Object.keys(root).sort()).toEqual(expected)
   })
 
   it('core subpath', () => {
-    expect(Object.keys(core).sort()).toEqual(['defineMiddleware', 'pipeline'])
+    expect(Object.keys(core).sort()).toEqual(expected)
   })
 
   it('middleware subpaths', () => {

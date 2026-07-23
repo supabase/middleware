@@ -24,3 +24,21 @@ export type {
   RuntimeName,
 } from './runtime.js'
 export type { Conflict, Entry } from './types.js'
+
+// Optional descriptor / interop layer (see ./descriptor.ts). Additive: a
+// middleware without an `id` carries none of this, and consumers that don't
+// care never import it.
+export {
+  annotate,
+  assertComposable,
+  getDescriptor,
+  DESCRIPTOR_VERSION,
+} from './descriptor.js'
+export type {
+  ContextKeys,
+  DescriptorInput,
+  MiddlewareDescriptor,
+  WithMiddleware,
+} from './descriptor.js'
+export { MiddlewareError, MiddlewareErrorCode } from './errors.js'
+export type { MiddlewareErrorDetails } from './errors.js'

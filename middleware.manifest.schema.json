@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Web Middleware Protocol static manifest",
+  "type": "object",
+  "required": ["protocol", "descriptorVersion", "package", "middleware"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "protocol": { "type": "string" },
+    "descriptorVersion": { "const": 1 },
+    "package": { "type": "string" },
+    "middleware": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "export"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "export": { "type": "string", "minLength": 1 },
+          "requires": {
+            "type": "array",
+            "items": { "type": "string" },
+            "uniqueItems": true
+          },
+          "provides": {
+            "type": "array",
+            "items": { "type": "string" },
+            "uniqueItems": true
+          },
+          "capabilities": {
+            "type": "array",
+            "items": { "type": "string" },
+            "uniqueItems": true
+          },
+          "documentation": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

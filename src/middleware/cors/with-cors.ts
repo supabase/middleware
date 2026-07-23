@@ -160,6 +160,7 @@ export const withCors = defineMiddleware<
   CorsContribution
 >({
   key: 'cors',
+  id: 'cors',
   // A generator so it can act on both sides of the handler: preflight before
   // `yield`, header stamping after.
   run: (config) =>

@@ -521,13 +521,11 @@ describe('auto-curry: mw(config) returns an Entry', () => {
       run: (config) => async () => ({ greeting: { hello: config.who } }),
     })
 
-    const nested = withGreeting(
-      { who: 'world' },
-      async (_req, ctx) => Response.json({ msg: ctx.greeting.hello }),
+    const nested = withGreeting({ who: 'world' }, async (_req, ctx) =>
+      Response.json({ msg: ctx.greeting.hello }),
     )
-    const flat = pipeline(
-      [withGreeting({ who: 'world' })],
-      async (_req, ctx) => Response.json({ msg: ctx.greeting.hello }),
+    const flat = pipeline([withGreeting({ who: 'world' })], async (_req, ctx) =>
+      Response.json({ msg: ctx.greeting.hello }),
     )
 
     const [nestedRes, flatRes] = await Promise.all([
@@ -550,9 +548,8 @@ describe('auto-curry: mw(config) returns an Entry', () => {
     const withTag = passing('tag', { v: 'ok' })
 
     const nested = withTag(async (_req, ctx) => Response.json({ v: ctx.tag.v }))
-    const flat = pipeline(
-      [withTag()],
-      async (_req, ctx) => Response.json({ v: ctx.tag.v }),
+    const flat = pipeline([withTag()], async (_req, ctx) =>
+      Response.json({ v: ctx.tag.v }),
     )
 
     const [nestedRes, flatRes] = await Promise.all([
@@ -584,7 +581,11 @@ describe('auto-curry: mw(config) returns an Entry', () => {
   it('type guarantee: mw() satisfies Entry for config-less middleware', () => {
     const withTag = passing('tag', { v: 'ok' })
 
-    const _entry = withTag() satisfies Entry<'tag', Record<never, never>, { v: string }>
+    const _entry = withTag() satisfies Entry<
+      'tag',
+      Record<never, never>,
+      { v: string }
+    >
     void _entry
   })
 })

@@ -21,12 +21,16 @@
 import type { IsAny } from './define-middleware.js'
 import type { BaseContext, FetchHandler } from './runtime.js'
 import type { Conflict, Entry } from './types.js'
+import { assertComposable } from './descriptor.js'
 
 type AnyHandler = (req: Request, ctx: object) => Promise<Response>
 type AnyEntry = Entry<string, object, unknown>
 
 /** Fold a tuple of entries onto `Ctx`, accumulating each contribution in order. */
-type Accumulate<Entries extends readonly AnyEntry[], Ctx> = Entries extends readonly [
+type Accumulate<
+  Entries extends readonly AnyEntry[],
+  Ctx,
+> = Entries extends readonly [
   Entry<infer Key, object, infer Contribution>,
   ...infer Rest,
 ]
@@ -44,16 +48,21 @@ type Accumulate<Entries extends readonly AnyEntry[], Ctx> = Entries extends read
  * Applied to the **handler** parameter (not `entries`), so it never disrupts
  * `const Entries` tuple inference.
  */
-type Validate<Entries extends readonly unknown[], Ctx = BaseContext> =
-  Entries extends readonly [Entry<infer Key, infer In, infer Contribution>, ...infer Rest]
-    ? IsAny<Ctx> extends true
-      ? Validate<Rest, Ctx & { [P in Key]: Contribution }>
-      : Key extends keyof Ctx
-        ? Conflict<Key>
-        : keyof In extends keyof Ctx
-          ? Validate<Rest, Ctx & { [P in Key]: Contribution }>
-          : `middleware-prereq: key '${Extract<Exclude<keyof In, keyof Ctx>, string>}' is not yet on the context (check ordering)`
-    : true
+type Validate<
+  Entries extends readonly unknown[],
+  Ctx = BaseContext,
+> = Entries extends readonly [
+  Entry<infer Key, infer In, infer Contribution>,
+  ...infer Rest,
+]
+  ? IsAny<Ctx> extends true
+    ? Validate<Rest, Ctx & { [P in Key]: Contribution }>
+    : Key extends keyof Ctx
+      ? Conflict<Key>
+      : keyof In extends keyof Ctx
+        ? Validate<Rest, Ctx & { [P in Key]: Contribution }>
+        : `middleware-prereq: key '${Extract<Exclude<keyof In, keyof Ctx>, string>}' is not yet on the context (check ordering)`
+  : true
 
 /**
  * Compose a flat list of middleware entries around a handler (first = outermost,
@@ -65,7 +74,13 @@ type Validate<Entries extends readonly unknown[], Ctx = BaseContext> =
  * the **handler** argument so they don't break tuple inference on `entries`.
  *
  * Under the hood, `pipeline` folds the array into the same nested calls as
- * hand-nesting — there is no new runtime behavior.
+ * hand-nesting. The one added runtime behavior is a **compose-time composition
+ * check**: any entries carrying a `~middleware` descriptor are validated for
+ * prerequisite ordering and duplicate contributions, throwing a coded
+ * {@link MiddlewareError} before the first request. For TypeScript consumers
+ * this only ever re-confirms what `Validate` already proved; its real value is
+ * catching dynamically- or plain-JS-assembled stacks the compiler never saw.
+ * Entries without descriptors are ignored, so the check is fully opt-in.
  *
  * @example
  * ```ts
@@ -90,6 +105,10 @@ export function pipeline<const Entries extends readonly AnyEntry[]>(
     ? (req: Request, ctx: Accumulate<Entries, BaseContext>) => Promise<Response>
     : Validate<Entries>,
 ): FetchHandler {
+  // Runtime backstop for the type-level `Validate` above: enforce ordering and
+  // write-once contributions from whatever descriptors the entries carry. Fails
+  // fast at composition, not on the first request.
+  assertComposable(entries as readonly unknown[])
   return (entries as readonly AnyEntry[]).reduceRight<AnyHandler>(
     (h, entry) => entry(h),
     handler as AnyHandler,

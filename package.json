@@ -35,13 +35,16 @@
       "import": "./dist/middleware/cors/index.mjs",
       "require": "./dist/middleware/cors/index.cjs"
     },
+    "./middleware.manifest.json": "./middleware.manifest.json",
     "./package.json": "./package.json"
   },
   "main": "./dist/index.cjs",
   "types": "./dist/index.d.cts",
   "sideEffects": false,
   "files": [
-    "dist"
+    "dist",
+    "middleware.manifest.json",
+    "middleware.manifest.schema.json"
   ],
   "engines": {
     "node": ">=20"
