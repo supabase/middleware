@@ -183,6 +183,12 @@ export const withCors = defineMiddleware<
       const response = yield { cors: { allowedOrigin: allowOrigin } }
       if (allowOrigin === null) return response
 
+      // Pass through responses the constructor cannot rebuild: `Response.error()`
+      // (status 0) and informational/upgrade statuses (e.g. a WebSocket 101,
+      // whose host extensions a reconstruction would sever) are outside the
+      // constructor's 200–599 range.
+      if (response.status < 200 || response.status > 599) return response
+
       // Copy headers so an immutable response (e.g. from `fetch`) is handled,
       // and pass the body through untouched (no buffering of streams).
       const headers = new Headers(response.headers)

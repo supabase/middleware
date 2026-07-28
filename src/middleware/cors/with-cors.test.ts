@@ -79,6 +79,28 @@ describe('withCors', () => {
     expect(res.headers.get('Access-Control-Max-Age')).toBe('600')
   })
 
+  it('passes Response.error() through untouched (status 0 cannot be reconstructed)', async () => {
+    const res = await withCors({ origin: '*' }, async () => Response.error())(
+      actual(),
+    )
+
+    // `new Response(body, { status: 0 })` would throw — the error response must
+    // pass through as-is, without CORS headers.
+    expect(res.status).toBe(0)
+    expect(res.type).toBe('error')
+  })
+
+  it('passes a non-reconstructable status through untouched (e.g. a 101 upgrade)', async () => {
+    // The Response constructor rejects statuses outside 200–599, so build the
+    // downstream response via the same escape hatch a host would use.
+    const upgrade = Response.error()
+    Object.defineProperty(upgrade, 'status', { value: 101 })
+    const res = await withCors({ origin: '*' }, async () => upgrade)(actual())
+
+    expect(res).toBe(upgrade)
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBeNull()
+  })
+
   it('preserves a streamed/immutable response body when stamping headers', async () => {
     const body = JSON.stringify({ streamed: true })
     const res = await withCors({ origin: '*' }, async () => {
