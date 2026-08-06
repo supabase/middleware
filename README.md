@@ -1,5 +1,7 @@
 # `@supabase/middleware`
 
+[![Docs](https://img.shields.io/badge/docs-supabase.github.io-3ECF8E?logo=readthedocs&logoColor=white)](https://supabase.github.io/middleware/)
+
 Composable, type-safe middleware for Web Fetch handlers.
 
 > **Status: public alpha (0.1).** The core engine and API are still settling — expect breaking changes before a stable 1.0. Follow [releases](https://github.com/supabase/middleware/releases) for changes.
@@ -153,6 +155,8 @@ This is the **one** place the "request-side" guarantee is relaxed, and writing `
 - [Composition primitives](./src/core/README.md) — `ctx` shape, conflict & prerequisite enforcement, composition rules, the response seam.
 - [Authoring guide](./src/middleware/README.md) — write your own middleware with `defineMiddleware` (request-side and generator forms).
 - Per-middleware: [feature-flag](./src/middleware/feature-flag/README.md) — the request-side worked example · [cors](./src/middleware/cors/README.md) — the response-seam worked example.
+
+Full generated API reference: [supabase.github.io/middleware](https://supabase.github.io/middleware/).
 
 ## License
 
