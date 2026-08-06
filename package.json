@@ -21,19 +21,34 @@
   "type": "module",
   "exports": {
     ".": {
-      "types": "./dist/index.d.mts",
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.cjs"
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
     "./feature-flag": {
-      "types": "./dist/middleware/feature-flag/index.d.mts",
-      "import": "./dist/middleware/feature-flag/index.mjs",
-      "require": "./dist/middleware/feature-flag/index.cjs"
+      "import": {
+        "types": "./dist/middleware/feature-flag/index.d.mts",
+        "default": "./dist/middleware/feature-flag/index.mjs"
+      },
+      "require": {
+        "types": "./dist/middleware/feature-flag/index.d.cts",
+        "default": "./dist/middleware/feature-flag/index.cjs"
+      }
     },
     "./cors": {
-      "types": "./dist/middleware/cors/index.d.mts",
-      "import": "./dist/middleware/cors/index.mjs",
-      "require": "./dist/middleware/cors/index.cjs"
+      "import": {
+        "types": "./dist/middleware/cors/index.d.mts",
+        "default": "./dist/middleware/cors/index.mjs"
+      },
+      "require": {
+        "types": "./dist/middleware/cors/index.d.cts",
+        "default": "./dist/middleware/cors/index.cjs"
+      }
     },
     "./package.json": "./package.json"
   },
@@ -49,17 +64,20 @@
   "packageManager": "pnpm@11.1.2+sha512.415a1cc25974731e75455c1468371be74c5aa5fb7621b50d4056d222451609f11412f23fd602e6169f1e060466641f798597e1be961a10688836a67b16569499",
   "scripts": {
     "build": "tsdown",
+    "check-exports": "attw --pack .",
     "prepare": "tsdown",
     "dev": "tsdown --watch",
     "docs": "typedoc",
     "format": "prettier --write .",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
+    "smoke": "node scripts/smoke-load.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.4",
     "eslint": "^10.0.2",
     "prettier": "3.8.1",
     "tsdown": "^0.20.3",
