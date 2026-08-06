@@ -52,6 +52,7 @@ export interface WithFeatureFlagConfig {
  * handler.
  */
 export interface FeatureFlagVerdict {
+  /** Whether the flag is enabled for this request. */
   enabled: boolean
   /** A/B test variant if applicable. */
   variant?: string | null
@@ -68,9 +69,13 @@ export interface FeatureFlagVerdict {
  * middleware offers downstream handlers.
  */
 export interface FeatureFlagContribution {
+  /** The flag's name, as passed to `withFeatureFlag`. */
   name: string
+  /** Always `true` — this shape is only produced on admission. */
   enabled: true
+  /** A/B test variant, if the verdict provided one. */
   variant: string | null
+  /** Provider-specific payload, if the verdict provided one. */
   payload: unknown
 }
 
