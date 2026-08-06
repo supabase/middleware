@@ -22,7 +22,7 @@ Check the [open issues](https://github.com/supabase/middleware/issues) for somet
 
 ### Prerequisites
 
-- **Node.js**: 20.x or higher
+- **Node.js**: 22.x or higher
 - **pnpm**
 
 ### Installation
