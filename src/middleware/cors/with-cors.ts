@@ -13,6 +13,7 @@
  */
 
 import { defineMiddleware } from '../../core/index.js'
+import type { Middleware } from '../../core/index.js'
 
 /** Decides the `Access-Control-Allow-Origin` value for a request. */
 export type CorsOrigin =
@@ -153,12 +154,12 @@ function buildPreflightHeaders(
  * }
  * ```
  */
-export const withCors = defineMiddleware<
+export const withCors: Middleware<
   'cors',
   WithCorsConfig,
   Record<never, never>,
   CorsContribution
->({
+> = defineMiddleware<'cors', WithCorsConfig, Record<never, never>, CorsContribution>({
   key: 'cors',
   // A generator so it can act on both sides of the handler: preflight before
   // `yield`, header stamping after.
