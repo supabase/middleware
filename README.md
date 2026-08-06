@@ -1,5 +1,8 @@
 # `@supabase/middleware`
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![Package](https://img.shields.io/npm/v/@supabase/middleware)](https://www.npmjs.com/package/@supabase/middleware)
+[![pkg.pr.new](https://pkg.pr.new/badge/supabase/middleware)](https://pkg.pr.new/~/supabase/middleware)
 [![Docs](https://img.shields.io/badge/docs-supabase.github.io-3ECF8E?logo=readthedocs&logoColor=white)](https://supabase.github.io/middleware/)
 
 Composable, type-safe middleware for Web Fetch handlers.
