@@ -51,6 +51,7 @@
     "build": "tsdown",
     "prepare": "tsdown",
     "dev": "tsdown --watch",
+    "docs": "typedoc",
     "format": "prettier --write .",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
@@ -62,6 +63,7 @@
     "eslint": "^10.0.2",
     "prettier": "3.8.1",
     "tsdown": "^0.20.3",
+    "typedoc": "^0.28.20",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.56.1",
     "vitest": "^4.0.18"
