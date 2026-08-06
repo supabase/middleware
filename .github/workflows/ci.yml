@@ -30,3 +30,12 @@ jobs:
       - run: pnpm test
 
       - run: pnpm build
+
+      - name: Smoke-test built entrypoints load in raw Node
+        run: pnpm smoke
+
+      - name: Check type exports (attw)
+        run: pnpm check-exports
+
+      - name: Verify JSR packaging
+        run: pnpm dlx jsr@0.14.3 publish --dry-run --allow-dirty

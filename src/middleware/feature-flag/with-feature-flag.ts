@@ -12,6 +12,7 @@
  */
 
 import { defineMiddleware } from '../../core/index.js'
+import type { Middleware } from '../../core/index.js'
 
 /**
  * Per-instance configuration the consumer passes to `withFeatureFlag(config, handler)`.
@@ -103,7 +104,12 @@ export interface FeatureFlagContribution {
  * })
  * ```
  */
-export const withFeatureFlag = defineMiddleware<
+export const withFeatureFlag: Middleware<
+  'featureFlag',
+  WithFeatureFlagConfig,
+  Record<never, never>,
+  FeatureFlagContribution
+> = defineMiddleware<
   // 1. Key — the slot this contributes to `ctx`. Must be unique in a stack.
   'featureFlag',
   // 2. Config — what the consumer passes to `withFeatureFlag(config, handler)`.

@@ -31,17 +31,21 @@ export default {
 
 ## Install
 
-Not yet published to npm/JSR — install from git. The package builds itself on install via a `prepare` script:
-
 ```sh
-pnpm add github:supabase/middleware
+# npm
+npm install @supabase/middleware
+
+# pnpm
+pnpm add @supabase/middleware
+
+# Deno / Supabase Edge Functions (no install — import directly)
+import { pipeline } from "npm:@supabase/middleware"
 ```
 
-With pnpm, allow the install build in `pnpm-workspace.yaml`:
+Also published on [JSR](https://jsr.io/@supabase/middleware):
 
-```yaml
-allowBuilds:
-  '@supabase/middleware': true
+```sh
+deno add jsr:@supabase/middleware
 ```
 
 ## What's in the box
