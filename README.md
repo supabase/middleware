@@ -175,8 +175,8 @@ This is the **one** place the "request-side" guarantee is relaxed, and writing `
 
 ## Docs
 
+- [Authoring guide](./docs/authoring-guide.md) — **build your own middleware**: `defineMiddleware`, tests, publishing, and composing it in the same `pipeline` array as the first-party entries.
 - [Composition primitives](./src/core/README.md) — `ctx` shape, conflict & prerequisite enforcement, composition rules, the response seam.
-- [Authoring guide](./src/middleware/README.md) — write your own middleware with `defineMiddleware` (request-side and generator forms).
 - Per-middleware: [feature-flag](./src/middleware/feature-flag/README.md) — the request-side worked example · [cors](./src/middleware/cors/README.md) — the response-seam worked example.
 
 Full generated API reference: [supabase.github.io/middleware](https://supabase.github.io/middleware/).

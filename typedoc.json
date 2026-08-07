@@ -17,6 +17,7 @@
     "GitHub": "https://github.com/supabase/middleware"
   },
   "projectDocuments": [
+    "docs/authoring-guide.md",
     "src/core/README.md",
     "src/middleware/README.md",
     "src/middleware/cors/README.md",

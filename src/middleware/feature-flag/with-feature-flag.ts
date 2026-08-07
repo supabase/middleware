@@ -7,7 +7,7 @@
  * admits with the verdict at `ctx.featureFlag` or short-circuits with a
  * configurable response.
  *
- * Read alongside `src/middleware/README.md` and `src/core/README.md` — this
+ * Read alongside `docs/authoring-guide.md` and `src/core/README.md` — this
  * file is referenced from both as the worked example of the pattern.
  */
 

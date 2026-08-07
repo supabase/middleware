@@ -119,7 +119,9 @@ root README in the same commit.
 
 ## Writing a middleware
 
-The composition primitives (`ctx` shape, conflict & prerequisite enforcement, the response seam) are documented in [`src/core/README.md`](./src/core/README.md). The authoring guide for `defineMiddleware` — request-side and generator forms — is in [`src/middleware/README.md`](./src/middleware/README.md), with [`feature-flag`](./src/middleware/feature-flag/README.md) and [`cors`](./src/middleware/cors/README.md) as worked examples.
+The full authoring guide — `defineMiddleware`, request-side and generator forms, tests, publishing, and composing alongside first-party entries — is in [`docs/authoring-guide.md`](./docs/authoring-guide.md). The composition primitives (`ctx` shape, conflict & prerequisite enforcement, the response seam) are documented in [`src/core/README.md`](./src/core/README.md), with [`feature-flag`](./src/middleware/feature-flag/README.md) and [`cors`](./src/middleware/cors/README.md) as worked examples.
+
+To add a middleware **to this repository** (rather than publish your own package), see [`src/middleware/README.md`](./src/middleware/README.md) for the directory layout and subpath wiring.
 
 ## Submitting Changes
 
