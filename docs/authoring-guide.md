@@ -52,10 +52,14 @@ handler instead.
 | `Contribution` | The shape that lands at `ctx[Key]`              | `ValidatedBodyContribution` |
 
 `run` has two stages. The outer `(config) =>` runs **once**, when the consumer
-constructs the middleware — initialize clients and computed config there. The
-inner `(req, ctx) =>` runs **per request**, and returns either a `Response`
+constructs the middleware — derive computed config there. The inner
+`(req, ctx) =>` runs **per request**, and returns either a `Response`
 (short-circuit; the handler never runs) or a single-key object
 `{ [key]: contribution }` (fall through).
+
+Anything that needs an environment value — an API client built from a secret —
+does **not** belong in the outer stage. See
+[client init and `getEnv` timing](#client-init-and-getenv-timing) below.
 
 ````ts
 // src/with-validated-body.ts
@@ -184,6 +188,101 @@ instead — that is what the first-party middleware do, and it is what makes
 **Explicit reject config beats a thrown error.** Returning a `Response` is not
 an error path — it can carry any status. Errors that escape `run` propagate to
 the host, so handle what you can describe.
+
+### Client init and `getEnv` timing
+
+Read configuration through `getEnv` (rule 2) — never `process.env`, `Deno.env`,
+or a Workers bindings object. That is what keeps a middleware portable. But
+`getEnv` has one timing constraint that decides _where_ you can call it.
+
+On Cloudflare Workers, env bindings are not ambient: they arrive per request as
+the second `fetch` argument, and the framework captures them when the host
+invokes the outermost handler. **Until the first request lands, `getEnv` returns
+`undefined` on Workers** (`src/core/runtime.ts` documents the resolution order).
+The outer `(config) =>` stage runs at construction — typically at module top
+level — which is before that. So this is portable everywhere except the one
+runtime it most needs to be portable on:
+
+```ts
+run: (config) => {
+  const client = new Client(getEnv('API_KEY')) // undefined on Workers
+  return async () => ({ myKey: await client.check() })
+}
+```
+
+Construct on first request instead and cache with `??=`. That runs once per
+isolate, not once per request, so it costs a single nullish check thereafter:
+
+```ts
+// src/with-notifier.ts
+import { defineMiddleware, getEnv } from '@supabase/middleware'
+import type { Middleware } from '@supabase/middleware'
+
+/** Per-instance configuration for {@link withNotifier}. */
+export interface WithNotifierConfig {
+  /** Name of the env var holding the API key. @defaultValue `'NOTIFIER_API_KEY'` */
+  apiKeyEnv?: string
+}
+
+/** Shape contributed at `ctx.notifier`. */
+export interface NotifierContribution {
+  /** Send a notification through the provider. */
+  notify: (message: string) => Promise<Response>
+}
+
+/** Stands in for whatever provider SDK you construct with a secret. */
+class NotifierClient {
+  constructor(private readonly apiKey: string) {}
+  notify(message: string): Promise<Response> {
+    return fetch('https://api.example.com/notify', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${this.apiKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ message }),
+    })
+  }
+}
+
+function requireEnv(name: string): string {
+  const value = getEnv(name)
+  if (!value) throw new Error(`${name} is not set`)
+  return value
+}
+
+/** Exposes a lazily constructed notification client at `ctx.notifier`. */
+export const withNotifier: Middleware<
+  'notifier',
+  WithNotifierConfig | undefined,
+  Record<never, never>,
+  NotifierContribution
+> = defineMiddleware<
+  'notifier',
+  WithNotifierConfig | undefined,
+  Record<never, never>,
+  NotifierContribution
+>({
+  key: 'notifier',
+  run: (config) => {
+    // Outer stage — runs once, at construction. Plain config resolves here.
+    const apiKeyEnv = config?.apiKeyEnv ?? 'NOTIFIER_API_KEY'
+
+    // Deferred: `getEnv(apiKeyEnv)` would be `undefined` here on Workers.
+    let client: NotifierClient | undefined
+
+    return async () => {
+      // First request — bindings have arrived, so `getEnv` resolves. `??=`
+      // keeps this to one construction for the life of the isolate.
+      const ready = (client ??= new NotifierClient(requireEnv(apiKeyEnv)))
+      return { notifier: { notify: (message) => ready.notify(message) } }
+    }
+  },
+})
+```
+
+The rule of thumb: **the outer stage is for values you already hold; the first
+request is for values the host has to give you.**
 
 ## 2. Public exports
 
@@ -407,10 +506,15 @@ First in the array runs first on the request. `pipeline` returns the outermost
 `(req, ctx) => Response` — that **is** the `fetch` handler, with no wrapper
 around it.
 
-`satisfies FetchHandler` is a type-only anchor that adds no runtime code. It
-turns on ambient accumulation, so the handler sees every upstream key, and it
-turns on collision detection. Duplicating a key fails to compile with
-`middleware-conflict: key '…' is already present on the upstream context`.
+With `pipeline`, accumulation and collision detection are **built in** — the
+handler sees every upstream key on `ctx`, and duplicating a key fails to compile
+with `middleware-conflict: key '…' is already present on the upstream context`,
+with no anchor anywhere. `pipeline` already returns `FetchHandler`, so the
+`satisfies FetchHandler` above is type-only documentation of the export shape.
+
+Where it does carry weight is the **hand-nested** form — `withCors({}, withFeatureFlag({…}, handler))`
+— composed without `pipeline`. There the anchor is what turns on ambient
+accumulation and collision detection, which is why §3's test uses it.
 
 ## Variant: requiring an upstream key
 
@@ -582,6 +686,10 @@ first-party worked example: it answers preflight with a `return` before the
 2. **MUST** read configuration through `getEnv` from `@supabase/middleware`.
    **NEVER** touch `process.env`, `Deno.env`, or a Workers bindings object
    directly — that is what makes the middleware portable across hosts.
+   **NEVER** call `getEnv` in the outer `(config) =>` stage: on Workers it
+   returns `undefined` before the first request. Construct env-dependent clients
+   lazily on first request — see
+   [client init and `getEnv` timing](#client-init-and-getenv-timing).
 3. **MUST** declare upstream requirements in `In`. **NEVER** check for them at
    runtime.
 4. **NEVER** `yield` more than once in a generator `run`.
