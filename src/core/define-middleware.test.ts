@@ -621,6 +621,80 @@ describe('type guarantees (tsc-verified)', () => {
     void _app
   })
 
+  it('accumulation: three levels deep, every upstream key still typed', () => {
+    const withA = passing('alpha', { v: 1 })
+    const withB = passing('beta', { v: 2 })
+    const withC = passing('gamma', { v: 3 })
+
+    const _app = withA(
+      withB(
+        withC(async (_req, ctx) => {
+          const a: number = ctx.alpha.v
+          const b: number = ctx.beta.v
+          const c: number = ctx.gamma.v
+          void a
+          void b
+          void c
+          return Response.json({ ok: true })
+        }),
+      ),
+    ) satisfies FetchHandler
+    void _app
+  })
+
+  it('accumulation: four levels deep, every upstream key still typed', () => {
+    const withA = passing('alpha', { v: 1 })
+    const withB = passing('beta', { v: 2 })
+    const withC = passing('gamma', { v: 3 })
+    const withD = passing('delta', { v: 4 })
+
+    const _app = withA(
+      withB(
+        withC(
+          withD(async (_req, ctx) => {
+            const a: number = ctx.alpha.v
+            const b: number = ctx.beta.v
+            const c: number = ctx.gamma.v
+            const d: number = ctx.delta.v
+            void a
+            void b
+            void c
+            void d
+            return Response.json({ ok: true })
+          }),
+        ),
+      ),
+    ) satisfies FetchHandler
+    void _app
+  })
+
+  it('accumulation: three levels deep with real config-taking middleware', () => {
+    const withStamp = defineMiddleware<
+      'stamp',
+      { at: string },
+      Record<never, never>,
+      { at: string }
+    >({ key: 'stamp', run: (config) => async () => ({ stamp: { at: config.at } }) })
+    const withA = passing('alpha', { v: 1 })
+
+    const _app = withFeatureFlag(
+      { name: 'beta', evaluate: () => true },
+      withStamp(
+        { at: 'now' },
+        withA(async (_req, ctx) => {
+          const f: string = ctx.featureFlag.name
+          const s: string = ctx.stamp.at
+          const a: number = ctx.alpha.v
+          void f
+          void s
+          void a
+          return Response.json({ ok: true })
+        }),
+      ),
+    ) satisfies FetchHandler
+    void _app
+  })
+
   it('collision: composing a middleware over an upstream that already has its key fails', () => {
     const withFoo = passing('foo', { v: 1 })
 
