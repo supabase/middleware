@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { withCors } from '../middleware/cors/with-cors.js'
 import { withFeatureFlag } from '../middleware/feature-flag/with-feature-flag.js'
 import { defineMiddleware } from './define-middleware.js'
 import { pipeline } from './pipeline.js'
@@ -599,6 +600,114 @@ describe('auto-curry: mw(config) returns an Entry', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Four-deep nesting, end to end: real shipped middleware, an `In` prerequisite
+// declared four layers down, and the stack actually invoked. The `type
+// guarantees` block below proves depth-4 accumulation *compiles*; this proves
+// the same stack runs and that every layer's contribution arrives at the
+// innermost handler with the value it was given.
+// ---------------------------------------------------------------------------
+describe('four-deep nesting', () => {
+  const order: string[] = []
+
+  /** Layer 3 — config-less, contributes a plain string. */
+  const withRequestId = defineMiddleware<'requestId', void, Record<never, never>, string>({
+    key: 'requestId',
+    run: () => async (req) => {
+      order.push('requestId')
+      return { requestId: req.headers.get('x-request-id') ?? 'generated' }
+    },
+  })
+
+  /**
+   * Layer 4 — declares prerequisites contributed by layers 2 and 3, so this
+   * only compiles when accumulation actually reached four deep.
+   */
+  const withAudit = defineMiddleware<
+    'audit',
+    { actor: string },
+    { featureFlag: { name: string }; requestId: string },
+    { line: string }
+  >({
+    key: 'audit',
+    run: (config) => async (_req, ctx) => {
+      order.push('audit')
+      return {
+        audit: { line: `${config.actor}:${ctx.featureFlag.name}:${ctx.requestId}` },
+      }
+    },
+  })
+
+  const app = withCors(
+    { origin: 'https://app.example.com' },
+    withFeatureFlag(
+      { name: 'beta', evaluate: () => ({ enabled: true, variant: 'B' }) },
+      withRequestId(
+        withAudit({ actor: 'svc' }, async (_req, ctx) => {
+          order.push('handler')
+          // All four upstream keys, ambiently typed — no annotation here.
+          const allowedOrigin: string | null = ctx.cors.allowedOrigin
+          const flag: string = ctx.featureFlag.name
+          const variant: string | null = ctx.featureFlag.variant
+          const requestId: string = ctx.requestId
+          const line: string = ctx.audit.line
+          return Response.json({ allowedOrigin, flag, variant, requestId, line })
+        }),
+      ),
+    ),
+  ) satisfies FetchHandler
+
+  it('delivers every upstream contribution to the innermost handler', async () => {
+    order.length = 0
+    const res = await app(
+      new Request('http://localhost/', {
+        headers: { Origin: 'https://app.example.com', 'x-request-id': 'req-42' },
+      }),
+    )
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      allowedOrigin: 'https://app.example.com',
+      flag: 'beta',
+      variant: 'B',
+      requestId: 'req-42',
+      line: 'svc:beta:req-42',
+    })
+  })
+
+  it('runs the layers outermost-first and unwinds the response seam last', async () => {
+    order.length = 0
+    const res = await app(
+      new Request('http://localhost/', {
+        headers: { Origin: 'https://app.example.com' },
+      }),
+    )
+
+    expect(order).toEqual(['requestId', 'audit', 'handler'])
+    // The outermost layer (a generator) still stamped the response on the way
+    // out, four layers up from the handler.
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe(
+      'https://app.example.com',
+    )
+  })
+
+  it('short-circuits from the outermost layer without running the inner three', async () => {
+    order.length = 0
+    const preflight = await app(
+      new Request('http://localhost/', {
+        method: 'OPTIONS',
+        headers: {
+          Origin: 'https://app.example.com',
+          'Access-Control-Request-Method': 'POST',
+        },
+      }),
+    )
+
+    expect(preflight.status).toBe(204)
+    expect(order).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Compile-time guarantee tests, verified by `tsc --noEmit` (the `typecheck`
 // script) — a regression is a type error or an unused-directive error. A plain
 // vitest run cannot see these. Ambient accumulation and collision detection both
@@ -701,6 +810,31 @@ describe('type guarantees (tsc-verified)', () => {
     const _bad =
       // @ts-expect-error — inner `withFoo` shadows upstream key 'foo'
       withFoo(withFoo(innerOk)) satisfies FetchHandler
+    void _bad
+  })
+
+  // Collision detection resolves `Base` through the same inward cascade as
+  // accumulation, so the adjacent-layer case above does not guard depth 3+. The
+  // positive controls are the accumulation tests above: the same shapes without a
+  // repeated key compile, so what these two expect is the duplicate key.
+  it('collision: a key contributed two layers up is still caught', () => {
+    const withFoo = passing('foo', { v: 1 })
+    const withBar = passing('bar', { v: 2 })
+
+    const _bad =
+      // @ts-expect-error — innermost `withFoo` shadows 'foo' from two layers up
+      withFoo(withBar(withFoo(innerOk))) satisfies FetchHandler
+    void _bad
+  })
+
+  it('collision: a key contributed three layers up is still caught', () => {
+    const withFoo = passing('foo', { v: 1 })
+    const withBar = passing('bar', { v: 2 })
+    const withBaz = passing('baz', { v: 3 })
+
+    const _bad =
+      // @ts-expect-error — innermost `withFoo` shadows 'foo' from three layers up
+      withFoo(withBar(withBaz(withFoo(innerOk)))) satisfies FetchHandler
     void _bad
   })
 
