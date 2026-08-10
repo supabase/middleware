@@ -68,6 +68,8 @@ function warnUnhonoredThirdArg(): void {
  * - **Accumulation.** Cross-middleware dependencies declared via `In` type with
  *   no ceremony. For the innermost handler to *ambiently* see every upstream key,
  *   annotate the outermost with `satisfies FetchHandler` (a type-only anchor).
+ *   One anchor covers the whole stack — it seeds a context that cascades through
+ *   any nesting depth, so only the outermost call carries it.
  *
  * @typeParam Key - The literal-string key contributed to ctx.
  * @typeParam Config - Configuration object the middleware accepts.
@@ -300,12 +302,24 @@ export interface Middleware<
   // works correctly for nested calls (`withA(withB(handler))`). This is the
   // same signature as the original type alias, so accumulation and collision
   // detection are preserved unchanged.
+  //
+  // `NoInfer<Base>` on the handler's `ctx` is what makes accumulation survive
+  // past two layers. `Base` is meant to flow *inward*, from the contextual type
+  // of this call's return (seeded at the top by `satisfies FetchHandler`), so
+  // each layer's `ctx` is the accumulated upstream plus its own key. Left
+  // inferable, `ctx` is a second inference site — and at depth >= 2 the handler
+  // argument is itself a middleware call whose type supplies a candidate there,
+  // which outranks the contextual return type and collapses `Base` to its
+  // constraint (the empty upstream). The cascade then stops: the innermost
+  // handler sees only its own key and the stack fails to compile. Blocking
+  // inference at that site leaves the return type as the single source of
+  // `Base`, so the push chains through any nesting depth.
   <Base extends In & BaseContext & NoConflict<Key, Base>>(
     ...args: MiddlewareArgs<
       Config,
       (
         req: Request,
-        ctx: Base & { [K in Key]: Contribution },
+        ctx: NoInfer<Base> & { [K in Key]: Contribution },
       ) => Promise<Response>
     >
   ): Produced<Base, In>
