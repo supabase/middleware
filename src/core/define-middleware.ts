@@ -248,9 +248,14 @@ export type IsAny<T> = boolean extends (T extends never ? true : false)
 /**
  * Resolves to a {@link Conflict} sentinel when `Base` already carries `Key`,
  * surfacing the collision at the call site (the sentinel string is not an
- * `object`, so the constraint fails). Exported so a middleware with a bespoke
- * generic signature (e.g. one that adds a `Payload` type parameter) can reuse the
- * core's collision check instead of hand-copying it.
+ * `object`, so the constraint fails).
+ *
+ * **Prefer {@link GuardConflict}.** This form sites the sentinel in a `Base`
+ * constraint, and TypeScript substitutes a failed constraint silently — the
+ * stack still fails to compile, but the message names neither the key nor the
+ * collision. The core moved off it for that reason; it stays exported because it
+ * is public API and remains correct for a bespoke signature that has nowhere to
+ * put a parameter-position guard.
  */
 export type NoConflict<Key extends string, Base> =
   IsAny<Base> extends true
@@ -258,6 +263,40 @@ export type NoConflict<Key extends string, Base> =
     : Key extends keyof Base
       ? Conflict<Key>
       : object
+
+/**
+ * The collision check {@link Middleware} uses: resolves to the `Handler` type
+ * when `Key` is free on `Base`, and to a {@link Conflict} sentinel when it is
+ * not — so the sentinel lands in the *handler parameter* position rather than in
+ * a `Base` constraint.
+ *
+ * That siting is the whole point. TypeScript substitutes a failed constraint
+ * silently, but prints a failed parameter verbatim, so the sentinel's text
+ * reaches the reader and the error is reported on the offending call instead of
+ * the one enclosing it. {@link pipeline} has always taken this route (see
+ * `Validate`); this is the nesting equivalent.
+ *
+ * Reuse it in a middleware with a bespoke generic signature (e.g. one that adds
+ * a `Payload` type parameter) by wrapping the handler parameter, and leave the
+ * `Base` constraint to `In & BaseContext`:
+ *
+ * ```ts
+ * <Base extends In & BaseContext>(
+ *   handler: GuardConflict<Key, Base, (req: Request, ctx: Base & …) => Promise<Response>>,
+ * ): Produced<Base, In>
+ * ```
+ *
+ * Every overload that can accept the handler needs the wrap. One left unguarded
+ * will accept the call the guarded one rejected, resolve its own `Base` to
+ * something unusable, and push the error back out to the enclosing call — which
+ * is the failure mode this type exists to remove.
+ */
+export type GuardConflict<Key extends string, Base, Handler> =
+  IsAny<Base> extends true
+    ? Handler
+    : Key extends keyof Base
+      ? Conflict<Key>
+      : Handler
 
 /**
  * The produced handler shape.
@@ -332,13 +371,17 @@ export interface Middleware<
   // `NoInfer` is a TypeScript 5.4 intrinsic and it is emitted into the published
   // `.d.ts`, so it sets the consumer TypeScript floor (documented under
   // Requirements in the root README). Replacing it means replacing that floor.
-  <Base extends In & BaseContext & NoConflict<Key, Base>>(
+  <Base extends In & BaseContext>(
     ...args: MiddlewareArgs<
       Config,
-      (
-        req: Request,
-        ctx: NoInfer<Base> & { [K in Key]: Contribution },
-      ) => Promise<Response>
+      GuardConflict<
+        Key,
+        Base,
+        (
+          req: Request,
+          ctx: NoInfer<Base> & { [K in Key]: Contribution },
+        ) => Promise<Response>
+      >
     >
   ): Produced<Base, In>
   // Handler call, propagation form — reached only when the cascade overload
@@ -366,12 +409,12 @@ export interface Middleware<
   // makes the requirement's type checked against `Contribution` where the key is
   // present, and is vacuous where it isn't.
   <
-    Base extends In & BaseContext & NoConflict<Key, Base>,
+    Base extends In & BaseContext,
     Ctx extends BaseContext & { [K in Key]?: Contribution } = BaseContext,
   >(
     ...args: MiddlewareArgs<
       Config,
-      (req: Request, ctx: Ctx) => Promise<Response>
+      GuardConflict<Key, Base, (req: Request, ctx: Ctx) => Promise<Response>>
     >
   ): Produced<Base & Omit<Ctx, Key>, In & Omit<Ctx, Key>>
   // Config-only call — `mw(config)` (or `mw()` for config-less) returns an

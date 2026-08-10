@@ -6,21 +6,27 @@
 
 /**
  * Sentinel type used to surface a key collision with the upstream context as a
- * TypeScript error at the call site. Where the sentinel lands decides whether
- * its text ever reaches the reader:
+ * TypeScript error at the call site. Both composition paths put it in the
+ * *handler parameter* position — `pipeline` via `Validate`, nesting via
+ * `GuardConflict` — because that is the position TypeScript prints:
  *
- * - **`pipeline`** puts it in the *handler parameter* position (see `Validate`),
- *   so TypeScript prints it verbatim: `Argument of type '(req, ctx) => …' is not
- *   assignable to parameter of type "middleware-conflict: key 'alpha' is already
- *   present on the upstream context"`. This is the message the sentinel is for.
- * - **Nesting** puts it in the wrapper's `Base` constraint (see `NoConflict`),
- *   and TypeScript substitutes a failed constraint silently. The stack still
- *   fails to compile — that guarantee holds at any nesting depth — but the
- *   reported error is an overload mismatch on the *enclosing* call, in which the
- *   inner handler's `ctx` has collapsed to `never` (printed as `ctx?: undefined`).
- *   Neither the key nor the collision is named there, so on this path the
- *   sentinel's text documents the intent for whoever reads the signature rather
- *   than for whoever reads the error.
+ * ```
+ * Argument of type '(req, ctx) => …' is not assignable to parameter of type
+ * "middleware-conflict: key 'alpha' is already present on the upstream context"
+ * ```
+ *
+ * The alternative siting — a failed `Base` constraint, which is what
+ * `NoConflict` produces — is substituted silently. The stack still fails to
+ * compile either way, but on that path the reported error is an overload
+ * mismatch on the *enclosing* call, in which the inner handler's `ctx` has
+ * collapsed to `never` (printed as `ctx?: undefined`); the collision is never
+ * named, and the key only shows up incidentally, inside the expected upstream
+ * `ctx`. Keep the sentinel on a parameter.
+ *
+ * The two paths differ only in how much surrounds the message. `pipeline` is a
+ * single signature, so it reports a one-line TS2345. `Middleware` is an overload
+ * set, so it reports TS2769 and the sentinel appears inside the per-overload
+ * breakdown — the first line of it, but a breakdown nonetheless.
  */
 export type Conflict<Key extends string> =
   `middleware-conflict: key '${Key}' is already present on the upstream context`

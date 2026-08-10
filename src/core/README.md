@@ -12,7 +12,7 @@ The package root exports:
 - **`seedContext`** — mint a marked base context (for hosts embedding the engine).
 - **`RuntimeName` / `BaseContext` / `Handler`** — the runtime/context types.
 - **`FetchHandler`** — the type-only anchor (`… satisfies FetchHandler`) that turns on ambient accumulation + collision detection on the outermost handler.
-- **`Conflict`** — the sentinel type surfaced on a key collision.
+- **`Conflict` / `GuardConflict`** — the sentinel type surfaced on a key collision, and the guard that sites it on the handler parameter.
 
 ## Quick start (consumer)
 
@@ -55,7 +55,7 @@ Inside a wrapped handler, `ctx` is a flat intersection of middleware contributio
 
 Two type-level guarantees:
 
-- **Collision detection.** If a middleware composes where the upstream already has its key, its `ctx` resolves to a `Conflict<Key>` sentinel string and the stack fails to typecheck. A second apply of the same middleware is a compile error, not a silent overwrite. (Surfaces under the `satisfies FetchHandler` anchor — see below.)
+- **Collision detection.** If a middleware composes where the upstream already has its key, the handler parameter it is checked against resolves to a `Conflict<Key>` sentinel string and the stack fails to typecheck. A second apply of the same middleware is a compile error, not a silent overwrite. The sentinel sits on the parameter rather than in the `Base` constraint so TypeScript prints it: the error names the key, and it lands on the offending call rather than the one enclosing it. (Surfaces under the `satisfies FetchHandler` anchor — see below.)
 - **Prerequisite enforcement.** Middleware declare the upstream shape they require via `In`. The wrapper constrains `Base extends In & BaseContext`. Composing where the upstream doesn't provide those keys is a type error. A middleware that declares prerequisites can't be a bare entry — it must be nested inside a wrapper that supplies those keys. Prerequisite-declared keys type with **no** anchor required, at any distance: unanchored there is no accumulated `Base` to push inward, so an unmet prerequisite travels the other way instead — each layer that doesn't contribute the key republishes it as its own requirement (the propagation overload on `Middleware`), until some layer does, or until the stack is used as an entry and fails there. Matching key names alone don't discharge it; the contribution's type has to match too.
 
 > **The anchor.** Cross-middleware dependencies declared via `In` type with zero ceremony. For the innermost handler to _ambiently_ see every upstream key (and for collision detection to fire), annotate the outermost handler with `satisfies FetchHandler` — a type-only anchor that resolves the accumulated `Base`. It adds no runtime code. One anchor covers the whole stack: it seeds a context that cascades inward through any nesting depth, so it belongs on the outermost call only.
@@ -123,7 +123,8 @@ export default {
 | `Entry<Key, In, Contribution>`              | Type produced by `mw(config)`. Carries phantom types for `pipeline`'s accumulation.           |
 | `defineMiddleware(spec)`                    | Author helper: declare a middleware. Returns a `(config, handler)` callable.                  |
 | `FetchHandler`                              | Type-only anchor (`… satisfies FetchHandler`) for ambient accumulation + collision detection. |
-| `Conflict<Key>`                             | Sentinel string a middleware's `ctx` resolves to when it would shadow an upstream key.        |
+| `Conflict<Key>`                             | Sentinel string the handler parameter resolves to when a middleware would shadow an upstream key. |
+| `GuardConflict<Key, Base, Handler>`         | The collision check `Middleware` applies — `Handler` when `Key` is free on `Base`, the sentinel when it isn't. |
 | `Middleware<Key, Config, In, Contribution>` | The shape of a middleware produced by `defineMiddleware`.                                     |
 | `getEnv(key)` / `runtimeName`               | Portable environment access (platform env first, host env fallback) and the std-env host name. |
 | `seedContext(platformArg?)`                 | Mint a marked base context — for hosts embedding the engine (e.g. `@supabase/server`).        |

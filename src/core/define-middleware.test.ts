@@ -3,10 +3,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { withCors } from '../middleware/cors/with-cors.js'
 import { withFeatureFlag } from '../middleware/feature-flag/with-feature-flag.js'
 import { defineMiddleware } from './define-middleware.js'
+import type { GuardConflict } from './define-middleware.js'
 import { pipeline } from './pipeline.js'
 import type { BaseContext, FetchHandler } from './runtime.js'
 import { getEnv, seedContext } from './runtime.js'
-import type { Entry } from './types.js'
+import type { Conflict, Entry } from './types.js'
 
 const innerOk = async () => Response.json({ ok: true })
 
@@ -856,6 +857,34 @@ describe('type guarantees (tsc-verified)', () => {
       // @ts-expect-error — innermost `withFoo` shadows 'foo' from three layers up
       withFoo(withBar(withBaz(withFoo(innerOk)))) satisfies FetchHandler
     void _bad
+  })
+
+  // `@ts-expect-error` pins that *an* error fires, not which one, and the whole
+  // point of siting the sentinel on the handler parameter is the text. These pin
+  // it directly: on a collision the parameter a call is checked against *is* the
+  // sentinel, so what TypeScript prints is this string.
+  it('collision: the guard resolves to the sentinel string, verbatim', () => {
+    const _msg: GuardConflict<'foo', { foo: { v: number } }, never> =
+      "middleware-conflict: key 'foo' is already present on the upstream context"
+    // Mutually assignable with `Conflict<'foo'>`, so the guard cannot quietly
+    // widen to `string` and keep this test passing.
+    const _exact: Conflict<'foo'> = _msg
+    void _exact
+  })
+
+  it('collision: the guard passes the handler through when the key is free', () => {
+    type H = (req: Request, ctx: BaseContext) => Promise<Response>
+    const _passthrough: GuardConflict<'foo', { bar: { v: number } }, H> = innerOk
+    void _passthrough
+  })
+
+  it('collision: the guard is skipped for an `any` upstream', () => {
+    type H = (req: Request, ctx: BaseContext) => Promise<Response>
+    // `keyof any` is every key, so without the `IsAny` arm this would report a
+    // collision for any key at all — `vi.fn`-inferred handlers hit this.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const _anyBase: GuardConflict<'foo', any, H> = innerOk
+    void _anyBase
   })
 
   it('prerequisite: a middleware with `In` keys cannot be a bare fetch entry', () => {

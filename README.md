@@ -95,7 +95,7 @@ export default {
 
 Two type-level guarantees, with no runtime cost:
 
-- **Collision detection.** Two middleware contributing the same key fail to compile (in a hand-nested stack, under the `satisfies FetchHandler` anchor on the outermost call — one anchor covers any nesting depth).
+- **Collision detection.** Two middleware contributing the same key fail to compile, with an error naming the key, reported on the offending call (in a hand-nested stack, under the `satisfies FetchHandler` anchor on the outermost call — one anchor covers any nesting depth).
 - **Prerequisite enforcement.** A middleware can declare upstream keys it needs (e.g. a database middleware that needs `jwtClaims` from an upstream auth middleware). Composing it without that upstream is a type error — it can't be a bare entry. Prerequisite-declared keys type with no anchor required, and the middleware that supplies them can sit any number of layers further out — an unmet prerequisite is republished by each layer in between until one contributes it.
 
 ### Runtime & environment
