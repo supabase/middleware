@@ -19,7 +19,9 @@ export type Conflict<Key extends string> =
  * Used by both `defineMiddleware` (to type the config-only overload) and
  * `pipeline` (internally).
  */
-export type ConfigArgs<Config> = undefined extends Config ? [config?: Config] : [config: Config]
+export type ConfigArgs<Config> = undefined extends Config
+  ? [config?: Config]
+  : [config: Config]
 
 type AnyFetchHandler = (req: Request, ctx: object) => Promise<Response>
 

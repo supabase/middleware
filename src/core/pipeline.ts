@@ -26,7 +26,10 @@ type AnyHandler = (req: Request, ctx: object) => Promise<Response>
 type AnyEntry = Entry<string, object, unknown>
 
 /** Fold a tuple of entries onto `Ctx`, accumulating each contribution in order. */
-type Accumulate<Entries extends readonly AnyEntry[], Ctx> = Entries extends readonly [
+type Accumulate<
+  Entries extends readonly AnyEntry[],
+  Ctx,
+> = Entries extends readonly [
   Entry<infer Key, object, infer Contribution>,
   ...infer Rest,
 ]
@@ -44,16 +47,21 @@ type Accumulate<Entries extends readonly AnyEntry[], Ctx> = Entries extends read
  * Applied to the **handler** parameter (not `entries`), so it never disrupts
  * `const Entries` tuple inference.
  */
-type Validate<Entries extends readonly unknown[], Ctx = BaseContext> =
-  Entries extends readonly [Entry<infer Key, infer In, infer Contribution>, ...infer Rest]
-    ? IsAny<Ctx> extends true
-      ? Validate<Rest, Ctx & { [P in Key]: Contribution }>
-      : Key extends keyof Ctx
-        ? Conflict<Key>
-        : keyof In extends keyof Ctx
-          ? Validate<Rest, Ctx & { [P in Key]: Contribution }>
-          : `middleware-prereq: key '${Extract<Exclude<keyof In, keyof Ctx>, string>}' is not yet on the context (check ordering)`
-    : true
+type Validate<
+  Entries extends readonly unknown[],
+  Ctx = BaseContext,
+> = Entries extends readonly [
+  Entry<infer Key, infer In, infer Contribution>,
+  ...infer Rest,
+]
+  ? IsAny<Ctx> extends true
+    ? Validate<Rest, Ctx & { [P in Key]: Contribution }>
+    : Key extends keyof Ctx
+      ? Conflict<Key>
+      : keyof In extends keyof Ctx
+        ? Validate<Rest, Ctx & { [P in Key]: Contribution }>
+        : `middleware-prereq: key '${Extract<Exclude<keyof In, keyof Ctx>, string>}' is not yet on the context (check ordering)`
+  : true
 
 /**
  * Compose a flat list of middleware entries around a handler (first = outermost,

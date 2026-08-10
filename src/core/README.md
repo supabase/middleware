@@ -28,7 +28,10 @@ export default {
   fetch: pipeline(
     [
       withCors({}),
-      withFeatureFlag({ name: 'beta', evaluate: (req) => req.headers.has('x-beta') }),
+      withFeatureFlag({
+        name: 'beta',
+        evaluate: (req) => req.headers.has('x-beta'),
+      }),
     ],
     async (req, ctx) => Response.json({ flag: ctx.featureFlag.name }),
   ),
@@ -116,17 +119,17 @@ export default {
 
 ## API
 
-| Export                                      | Description                                                                                   |
-| ------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `pipeline(entries, handler)`                | Compose a flat array of entries around a handler. Returns a `FetchHandler`.                   |
-| `Entry<Key, In, Contribution>`              | Type produced by `mw(config)`. Carries phantom types for `pipeline`'s accumulation.           |
-| `defineMiddleware(spec)`                    | Author helper: declare a middleware. Returns a `(config, handler)` callable.                  |
-| `FetchHandler`                              | Type-only anchor (`… satisfies FetchHandler`) for ambient accumulation + collision detection. |
-| `Conflict<Key>`                             | Sentinel string a middleware's `ctx` resolves to when it would shadow an upstream key.        |
-| `Middleware<Key, Config, In, Contribution>` | The shape of a middleware produced by `defineMiddleware`.                                     |
+| Export                                      | Description                                                                                    |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `pipeline(entries, handler)`                | Compose a flat array of entries around a handler. Returns a `FetchHandler`.                    |
+| `Entry<Key, In, Contribution>`              | Type produced by `mw(config)`. Carries phantom types for `pipeline`'s accumulation.            |
+| `defineMiddleware(spec)`                    | Author helper: declare a middleware. Returns a `(config, handler)` callable.                   |
+| `FetchHandler`                              | Type-only anchor (`… satisfies FetchHandler`) for ambient accumulation + collision detection.  |
+| `Conflict<Key>`                             | Sentinel string a middleware's `ctx` resolves to when it would shadow an upstream key.         |
+| `Middleware<Key, Config, In, Contribution>` | The shape of a middleware produced by `defineMiddleware`.                                      |
 | `getEnv(key)` / `runtimeName`               | Portable environment access (platform env first, host env fallback) and the std-env host name. |
-| `seedContext(platformArg?)`                 | Mint a marked base context — for hosts embedding the engine (e.g. `@supabase/server`).        |
-| `RuntimeName` / `BaseContext`               | The std-env host-name union and the base context type.                                        |
+| `seedContext(platformArg?)`                 | Mint a marked base context — for hosts embedding the engine (e.g. `@supabase/server`).         |
+| `RuntimeName` / `BaseContext`               | The std-env host-name union and the base context type.                                         |
 
 ## See also
 
