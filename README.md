@@ -63,7 +63,7 @@ deno add jsr:@supabase/middleware
 
 ## How it composes
 
-Each middleware contributes one typed key to `ctx`. Pass entries as a flat array to `pipeline` — first in the array runs first on the request. The handler sees **every** upstream key ambiently, typed from the entries array (the `satisfies FetchHandler` below just asserts the result is usable as a `fetch` entry; hand-nested stacks do need it as an anchor on the outermost call):
+Each middleware contributes one typed key to `ctx`. Pass entries as a flat array to `pipeline` — first in the array runs first on the request. The handler sees **every** upstream key ambiently, typed from the entries array (the `satisfies FetchHandler` below just asserts the result is usable as a `fetch` entry):
 
 ```ts
 import { pipeline, defineMiddleware } from '@supabase/middleware'
@@ -95,8 +95,8 @@ export default {
 
 Two type-level guarantees, with no runtime cost:
 
-- **Collision detection.** Two middleware contributing the same key fail to compile, with an error naming the key, reported on the offending call (in a hand-nested stack, under the `satisfies FetchHandler` anchor on the outermost call — one anchor covers any nesting depth).
-- **Prerequisite enforcement.** A middleware can declare upstream keys it needs (e.g. a database middleware that needs `jwtClaims` from an upstream auth middleware). Composing it without that upstream is a type error — it can't be a bare entry. Prerequisite-declared keys type with no anchor required, and the middleware that supplies them can sit any number of layers further out — an unmet prerequisite is republished by each layer in between until one contributes it.
+- **Collision detection.** Two middleware contributing the same key fail to compile, with an error naming the key, reported on the offending call. With `pipeline` this is checked from the entries array. Nested handlers need `satisfies FetchHandler` on the outermost call for it to fire — one annotation covers any nesting depth — and without it a duplicate key compiles silently and the inner contribution wins at runtime.
+- **Prerequisite enforcement.** A middleware can declare upstream keys it needs (e.g. a database middleware that needs `jwtClaims` from an upstream auth middleware). The middleware that supplies them can sit any number of layers further out — an unmet prerequisite is republished by each layer in between until one contributes it — and none of that needs an annotation. The contribution's type has to match, not just the key name. If **nothing** supplies it, the composed stack ends up with a _required_ `ctx`, which is not an error on its own: it only fails where the stack is checked against `FetchHandler`. A bare `export default { fetch: app }` is not such a position, so it compiles and throws `TypeError` on the first request. Annotate the outermost call with `satisfies FetchHandler`, or put the stack in any `FetchHandler`-typed position, to catch it at build time.
 
 ### Runtime & environment
 
@@ -142,7 +142,7 @@ export default {
 }
 ```
 
-When a concern is genuinely two-sided and belongs _inside_ a middleware rather than on the entry, reach for the response seam below.
+Normally the `Response` is shaped by whoever returns it — the handler, as above, or a middleware short-circuiting with one of its own. The response seam below is for the other case: a middleware that has to still be running after the downstream stack finishes — to read or replace the `Response` it returned, to catch what it threw, or just to run cleanup.
 
 ### The response seam (when a middleware really needs the way out)
 

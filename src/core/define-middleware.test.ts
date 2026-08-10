@@ -728,8 +728,17 @@ describe('four-deep nesting', () => {
 // ---------------------------------------------------------------------------
 // Compile-time guarantee tests, verified by `tsc --noEmit` (the `typecheck`
 // script) — a regression is a type error or an unused-directive error. A plain
-// vitest run cannot see these. Ambient accumulation and collision detection both
-// require the `satisfies FetchHandler` anchor on the outermost handler.
+// vitest run cannot see these.
+//
+// The accumulation cases below carry `satisfies FetchHandler`, but ambient
+// accumulation does not depend on it — an unannotated outermost call resolves
+// `Base` to its constraint, the same empty upstream the annotation would seed,
+// and the cascade proceeds inward from there at any depth. Collision detection
+// is the guarantee that does depend on it: the produced handler type records the
+// upstream a stack requires, never the keys it contributes, so unannotated there
+// is nothing for an enclosing call to check its own key against. The annotation
+// is therefore load-bearing in the `collision:` cases and incidental in the
+// `accumulation:` ones.
 // ---------------------------------------------------------------------------
 describe('type guarantees (tsc-verified)', () => {
   it('accumulation: the inner handler sees every upstream key, typed', () => {
@@ -887,7 +896,7 @@ describe('type guarantees (tsc-verified)', () => {
     void _anyBase
   })
 
-  it('prerequisite: a middleware with `In` keys cannot be a bare fetch entry', () => {
+  it('prerequisite: a middleware with `In` keys cannot be the bare `fetch` export', () => {
     const withNeedsAuth = defineMiddleware<
       'authz',
       void,
@@ -899,7 +908,7 @@ describe('type guarantees (tsc-verified)', () => {
     })
 
     const handler = withNeedsAuth(innerOk)
-    // @ts-expect-error — requires upstream jwtClaims; cannot satisfy a bare entry
+    // @ts-expect-error — requires upstream jwtClaims; cannot be the bare `fetch` export
     const _entry: FetchHandler = handler
     void _entry
   })
@@ -933,7 +942,7 @@ describe('type guarantees (tsc-verified)', () => {
   // exists to serve. Unanchored there is no accumulated `Base` to push inward,
   // so each layer that does not contribute the required key republishes it as
   // its own requirement; the stack only typechecks once some layer contributes
-  // it, or fails at the point it is used as an entry.
+  // it, or fails wherever the stack is checked against `FetchHandler`.
   //
   // Distance between provider and requirer is the axis these pin: the earlier
   // signature discharged a prerequisite only from the immediately enclosing
@@ -976,11 +985,13 @@ describe('type guarantees (tsc-verified)', () => {
     void _app
   })
 
-  it('prerequisite: anchored, provider two layers up', () => {
+  it('prerequisite: annotated, provider two layers up', () => {
     const withA = passing('alpha', { v: 1 })
     const withB = passing('beta', { v: 2 })
 
-    // The anchor seeds the cascade, so `alpha` reaches the requirer at any depth.
+    // Same stack as above, now also asserted usable as the `fetch` export: the inward cascade
+    // carries `alpha` to the requirer, so it is discharged on the way in rather
+    // than republished outward.
     const _app = withA(withB(withNeedsAlpha(innerOk))) satisfies FetchHandler
     void _app
   })
@@ -1004,12 +1015,15 @@ describe('type guarantees (tsc-verified)', () => {
     void _app
   })
 
-  it('prerequisite: a requirement no layer contributes fails at the entry', () => {
+  it('prerequisite: a requirement no layer contributes fails when checked as the `fetch` export', () => {
     const withB = passing('beta', { v: 2 })
     const withC = passing('gamma', { v: 3 })
 
     // Composes — the requirement is still travelling — but never lands, so the
-    // produced stack keeps a required `ctx` and cannot be a bare entry.
+    // produced stack keeps a required `ctx`. Note what pins the error: the
+    // `FetchHandler` annotation below. The composition itself is fine, and an
+    // untyped `export default { fetch: stack }` would compile and then read
+    // `undefined` off `ctx` at runtime.
     const stack = withB(withC(withNeedsAlpha(innerOk)))
     // @ts-expect-error — nothing in the stack contributes `alpha`
     const _entry: FetchHandler = stack

@@ -34,7 +34,7 @@ function warnUnhonoredThirdArg(): void {
  *
  * `run` is **request-side by default** (the common case): it runs *before* the
  * handler and never observes the handler's `Response`. Response-shaped concerns
- * (CORS, envelopes) normally belong in the handler or a `.then()` on the entry.
+ * (CORS, envelopes) normally belong in the handler or a `.then()` on the stack.
  *
  * **Response seam (escape hatch).** When a middleware genuinely needs to see the
  * way out — stamp headers, time the request, run `finally` cleanup — write `run`
@@ -57,23 +57,31 @@ function warnUnhonoredThirdArg(): void {
  *
  * Typing:
  *
- * - **Prerequisite-free middleware are entry-able.** Their produced handler has
- *   an optional `ctx`, so it satisfies a bare `(req) => Response` fetch entry and
- *   self-seeds a fresh context.
+ * - **Prerequisite-free middleware can be the `fetch` export on their own.**
+ *   Their produced handler has an optional `ctx`, so it satisfies a bare
+ *   `(req) => Response` export and self-seeds a fresh context.
  * - **Middleware with `In` prerequisites require `ctx`.** They can only be nested
- *   inside a wrapper that supplies those keys — never a bare entry — which keeps
- *   the prerequisite from being a type-lie at the top level. The supplying
- *   wrapper need not be the immediately enclosing one and no anchor is needed:
- *   an unmet prerequisite is republished by each layer that doesn't contribute
- *   it, so it travels outward until one does, or until the stack is used as an
- *   entry and fails there.
- * - **Collision detection.** Composing where the upstream already has the key
- *   resolves `Base` to a `Conflict<Key>` sentinel; the stack fails to typecheck.
- * - **Accumulation.** Cross-middleware dependencies declared via `In` type with
- *   no ceremony. For the innermost handler to *ambiently* see every upstream key,
- *   annotate the outermost with `satisfies FetchHandler` (a type-only anchor).
- *   One anchor covers the whole stack — it seeds a context that cascades through
- *   any nesting depth, so only the outermost call carries it.
+ *   inside a wrapper that supplies those keys — never the bare `fetch` export —
+ *   which keeps the prerequisite from being a type-lie at the top level. The
+ *   supplying wrapper need not be the immediately enclosing one, and no
+ *   annotation is needed: an unmet prerequisite is republished by each layer that
+ *   doesn't contribute it, travelling outward until one does. If none does, the
+ *   stack keeps a required `ctx` and fails wherever it is checked against
+ *   {@link FetchHandler} — but an untyped `export default { fetch: … }` is no
+ *   such check, so annotate the outermost call to catch it at build time.
+ * - **Accumulation needs no annotation.** The innermost handler sees every
+ *   upstream key ambiently at any nesting depth. An unannotated outermost call
+ *   has no contextual return type, so `Base` resolves to its constraint — the
+ *   empty upstream, which is exactly what a `satisfies FetchHandler` would seed
+ *   — and the cascade proceeds inward from there.
+ * - **Collision detection does.** Composing where the upstream already has the
+ *   key resolves `Base` to a `Conflict<Key>` sentinel and the stack fails to
+ *   typecheck, but only under `satisfies FetchHandler` on the outermost call.
+ *   The produced handler type records the upstream a stack *requires*, never the
+ *   keys it *contributes*, so an unannotated enclosing call has nothing to check
+ *   its own key against and a duplicate compiles silently. One annotation covers
+ *   any depth. {@link pipeline} has no such gap — it validates from its entries
+ *   array — so a stack that cannot carry the annotation is better written flat.
  *
  * @typeParam Key - The literal-string key contributed to ctx.
  * @typeParam Config - Configuration object the middleware accepts.
@@ -302,7 +310,7 @@ export type GuardConflict<Key extends string, Base, Handler> =
  * The produced handler shape.
  *
  * - **No prerequisites** (`In` empty): `ctx` is optional, so the handler is
- *   directly usable as a runtime `fetch` entry and self-seeds its context.
+ *   directly usable as the runtime's `fetch` export and self-seeds its context.
  * - **With prerequisites**: `ctx` is required, so the middleware must be nested
  *   inside a wrapper that provides those keys.
  *
@@ -357,9 +365,11 @@ export interface Middleware<
   // matches both, and only this one contextually types its `ctx`.
   //
   // `NoInfer<Base>` on the handler's `ctx` is what makes accumulation survive
-  // past two layers. `Base` is meant to flow *inward*, from the contextual type
-  // of this call's return (seeded at the top by `satisfies FetchHandler`), so
-  // each layer's `ctx` is the accumulated upstream plus its own key. Left
+  // past two layers. `Base` flows *inward*, from the contextual type of this
+  // call's return — a `satisfies FetchHandler` where there is one, and otherwise
+  // `Base`'s own constraint, the empty upstream, which is the same starting
+  // point — so each layer's `ctx` is the accumulated upstream plus its own key.
+  // That fallback is why accumulation needs no annotation at any depth. Left
   // inferable, `ctx` is a second inference site — and at depth >= 2 the handler
   // argument is itself a middleware call whose type supplies a candidate there,
   // which outranks the contextual return type and collapses `Base` to its
@@ -401,7 +411,7 @@ export interface Middleware<
   // republishes `Omit<Ctx, Key>`: everything still outstanding once this layer's
   // own contribution is accounted for. `Produced`'s second argument gets it too,
   // so a stack with an outstanding requirement has a *required* `ctx` and cannot
-  // pass as a bare `FetchHandler` entry.
+  // pass as a bare `FetchHandler` export.
   //
   // `Ctx extends { [K in Key]?: Contribution }` is what keeps `Omit` honest.
   // Omitting by key name alone would discharge `{ alpha: { v: number } }` against

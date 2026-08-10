@@ -20,7 +20,7 @@
  * on Workers, `getEnv` returns `undefined` at module top level, before the
  * first request has been seen.
  *
- * There is **no entry wrapper**. A composed stack is used directly as the
+ * There is **no wrapper step**. A composed stack is used directly as the
  * runtime's `fetch` handler (`export default { fetch: withFoo(config, handler) }`).
  * When the host invokes the outermost handler, {@link defineMiddleware} detects
  * that the second argument is not an upstream context (via {@link isContext})
@@ -107,14 +107,35 @@ export type Handler<Ctx extends BaseContext = BaseContext> = (
 ) => Promise<Response>
 
 /**
- * The type of a composed stack used as a runtime `fetch` entry. Annotating the
- * outermost handler with this (`… satisfies FetchHandler`) is the optional,
- * type-only anchor that lets the innermost handler see *every* upstream key
- * ambiently. One anchor on the outermost call is enough at any nesting depth —
- * the context it seeds cascades inward through every layer. It is not needed for
- * cross-middleware dependencies declared as `In` prerequisites, nor for
- * {@link pipeline} (which accumulates from its entries array) — those type
- * without any annotation.
+ * The type of a composed stack handed to the host — the `fetch` export,
+ * `Deno.serve(app)`, and so on.
+ *
+ * Annotating the outermost handler with this (`… satisfies FetchHandler`) is
+ * optional and adds no runtime code. It does two things:
+ *
+ * - **Asserts the stack can be the `fetch` export.** Prerequisites are enforced
+ *   between layers with no annotation at all. What is left over is the case
+ *   where *no* layer supplies a declared `In` key: the requirement is republished
+ *   all the way out, so the composed stack has a **required** `ctx`. That alone
+ *   is not an error — a stack is just a function, and a required `ctx` is only
+ *   wrong where the stack is handed to the host. This type is what makes that
+ *   position explicit: its `ctx` is optional, and a required one is not
+ *   assignable to it. An untyped
+ *   `export default { fetch: app }` checks nothing, so without the annotation
+ *   the stack compiles, ships, and reads `undefined` off `ctx` on the first
+ *   request. Ordinary `satisfies`, not an anchor — and not the only route: any
+ *   `FetchHandler`-typed position does the same job.
+ * - **Turns on collision detection.** Two middleware contributing the same key
+ *   are only caught under this annotation; see the `Middleware` overload set.
+ *   One annotation on the outermost call covers any nesting depth.
+ *
+ * It is **not** needed for accumulation: the innermost handler sees every
+ * upstream key ambiently at any depth without it, because an unannotated
+ * outermost call resolves `Base` to its constraint — the empty upstream — which
+ * is the same context an annotation would seed, and the cascade proceeds inward
+ * from there. It is likewise not needed for cross-middleware dependencies
+ * declared as `In` prerequisites (those travel outward), nor for
+ * {@link pipeline} (which accumulates and validates from its entries array).
  */
 export type FetchHandler = (
   req: Request,

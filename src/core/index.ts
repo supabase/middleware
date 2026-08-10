@@ -5,11 +5,12 @@
  *
  * Middleware compose by direct nesting: each `withFoo(config, handler)` produces
  * a single `(req, ctx) => Response` function. The outermost is used directly as
- * the runtime's `fetch` handler — there is no entry wrapper. It detects a
+ * the runtime's `fetch` handler — there is no wrapper step. It detects a
  * host-supplied platform argument vs. an upstream context and seeds a fresh
  * context itself, capturing the platform env behind the importable
- * {@link getEnv}. Optionally annotate the outermost with `satisfies FetchHandler`
- * to make the innermost handler see every upstream key ambiently.
+ * {@link getEnv}. The innermost handler sees every upstream key ambiently with
+ * no annotation; annotate the outermost with `satisfies FetchHandler` to assert
+ * the stack can be the `fetch` export and to turn on collision detection.
  *
  * @packageDocumentation
  */

@@ -53,7 +53,7 @@ describe('pipeline', () => {
     expect(await res.json()).toEqual({ msg: 'world' })
   })
 
-  it('is equivalent to hand-nesting (same response)', async () => {
+  it('is equivalent to nested handlers (same response)', async () => {
     const withA = passing('alpha', { v: 1 })
     const withB = passing('beta', { v: 2 })
 
@@ -111,7 +111,7 @@ describe('pipeline', () => {
   it('still drives a generator entry through the response seam', async () => {
     // A regression guard for the flat syntax: an `async function*` middleware
     // placed in a pipeline array must still observe and shape the downstream
-    // Response, exactly as it would hand-nested.
+    // Response, exactly as it would with nested handlers.
     const withStamp = defineMiddleware<
       'stamp',
       { header: string },
