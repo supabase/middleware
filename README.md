@@ -48,6 +48,11 @@ Also published on [JSR](https://jsr.io/@supabase/middleware):
 deno add jsr:@supabase/middleware
 ```
 
+### Requirements
+
+- **TypeScript 5.4 or newer.** The published types use [`NoInfer`](https://www.typescriptlang.org/docs/handbook/utility-types.html#noinfertype), a 5.4 intrinsic, to keep the accumulated `ctx` flowing inward through nested middleware. This floor applies to typechecking against the shipped `.d.ts` only — the runtime is plain JavaScript with no TypeScript dependency.
+- **Node 22 or newer** on Node (per `engines`). Deno, Bun, and Cloudflare Workers add no floor of their own.
+
 ## What's in the box
 
 | Import                                  | What it does                                                                                                                     |

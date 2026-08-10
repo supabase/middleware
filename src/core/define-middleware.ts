@@ -314,6 +314,10 @@ export interface Middleware<
   // handler sees only its own key and the stack fails to compile. Blocking
   // inference at that site leaves the return type as the single source of
   // `Base`, so the push chains through any nesting depth.
+  //
+  // `NoInfer` is a TypeScript 5.4 intrinsic and it is emitted into the published
+  // `.d.ts`, so it sets the consumer TypeScript floor (documented under
+  // Requirements in the root README). Replacing it means replacing that floor.
   <Base extends In & BaseContext & NoConflict<Key, Base>>(
     ...args: MiddlewareArgs<
       Config,
