@@ -63,7 +63,7 @@ deno add jsr:@supabase/middleware
 
 ## How it composes
 
-Each middleware contributes one typed key to `ctx`. Pass entries as a flat array to `pipeline` — first in the array runs first on the request. The handler sees **every** upstream key ambiently, typed from the entries array (the `satisfies FetchHandler` below just asserts the result is usable as a `fetch` entry):
+Each middleware contributes one typed key to `ctx`. Pass entries as a flat array to `pipeline` — first in the array runs first on the request. The handler sees **every** upstream key ambiently, typed from the entries array (the `satisfies FetchHandler` below just asserts the result is usable as the `fetch` export):
 
 ```ts
 import { pipeline, defineMiddleware } from '@supabase/middleware'
@@ -95,8 +95,8 @@ export default {
 
 Two type-level guarantees, with no runtime cost:
 
-- **Collision detection.** Two middleware contributing the same key fail to compile, with an error naming the key, reported on the offending call. With `pipeline` this is checked from the entries array. Nested handlers need `satisfies FetchHandler` on the outermost call for it to fire — one annotation covers any nesting depth — and without it a duplicate key compiles silently and the inner contribution wins at runtime.
-- **Prerequisite enforcement.** A middleware can declare upstream keys it needs (e.g. a database middleware that needs `jwtClaims` from an upstream auth middleware). The middleware that supplies them can sit any number of layers further out — an unmet prerequisite is republished by each layer in between until one contributes it — and none of that needs an annotation. The contribution's type has to match, not just the key name. If **nothing** supplies it, the composed stack ends up with a _required_ `ctx`, which is not an error on its own: it only fails where the stack is checked against `FetchHandler`. A bare `export default { fetch: app }` is not such a position, so it compiles and throws `TypeError` on the first request. Annotate the outermost call with `satisfies FetchHandler`, or put the stack in any `FetchHandler`-typed position, to catch it at build time.
+- **Collision detection.** Two middleware contributing the same key fail to compile, with an error naming the key on the offending call. `pipeline` checks this from the entries array. Nested handlers need `satisfies FetchHandler` on the outermost call — one annotation covers any depth — and without it the duplicate compiles silently and the inner contribution wins at runtime.
+- **Prerequisite enforcement.** A middleware can declare upstream keys it needs (e.g. a database middleware that needs `jwtClaims` from an upstream auth middleware). Any layer further out can supply them, at any distance and with no annotation, and the contribution's type has to match — not just the key name. If **nothing** supplies it, the stack keeps a _required_ `ctx`, which fails only where it is checked against `FetchHandler`. A bare `export default { fetch: app }` is no such check, so it compiles and throws `TypeError` on the first request — annotate the outermost call with `satisfies FetchHandler` (or put the stack in any `FetchHandler`-typed position) to catch it at build time.
 
 ### Runtime & environment
 

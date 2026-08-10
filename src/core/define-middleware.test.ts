@@ -913,7 +913,7 @@ describe('type guarantees (tsc-verified)', () => {
     void _entry
   })
 
-  it('cross-middleware deps via `In` type with no anchor', () => {
+  it('unannotated: a nested handler reads its own contribution', () => {
     const withStamp = defineMiddleware<
       'stamp',
       void,
@@ -921,10 +921,9 @@ describe('type guarantees (tsc-verified)', () => {
       { at: number }
     >({ key: 'stamp', run: () => async () => ({ stamp: { at: 1 } }) })
 
-    // withFeatureFlag (no prereq) wraps withStamp; the handler reads its own key
-    // with no anchor. NOTE: `withStamp` declares `Record<never, never>` — no
-    // prerequisites — so despite this test's name it does not exercise an `In`
-    // prerequisite at all. The `In` behaviour is pinned by the three tests below.
+    // Neither middleware declares an `In` prerequisite — this pins only that a
+    // nested handler types with no annotation. `In` behaviour is pinned by the
+    // tests below.
     const _app = withFeatureFlag(
       { name: 'beta', evaluate: () => true },
       withStamp(async (_req, ctx) => {

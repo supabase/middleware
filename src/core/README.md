@@ -55,7 +55,7 @@ Inside a wrapped handler, `ctx` is a flat intersection of middleware contributio
 
 Two type-level guarantees:
 
-- **Collision detection.** If a middleware composes where the upstream already has its key, the handler parameter it is checked against resolves to a `Conflict<Key>` sentinel string and the stack fails to typecheck. A second apply of the same middleware is a compile error, not a silent overwrite. The sentinel sits on the parameter rather than in the `Base` constraint so TypeScript prints it: the error names the key, and it lands on the offending call rather than the one enclosing it. With `pipeline` this is checked from the entries array. With nested handlers it needs `satisfies FetchHandler` on the outermost call — see below.
+- **Collision detection.** If a middleware composes where the upstream already has its key, the handler parameter it is checked against resolves to a `Conflict<Key>` sentinel string and the stack fails to typecheck — the error names the key and lands on the offending call. A second apply of the same middleware is a compile error, not a silent overwrite. `pipeline` checks this from the entries array; nested handlers need `satisfies FetchHandler` on the outermost call — see below.
 - **Prerequisite enforcement.** Middleware declare the upstream shape they require via `In`. The wrapper constrains `Base extends In & BaseContext`, so composing where the upstream doesn't provide those keys is a type error — and matching key names alone don't discharge it, the contribution's type has to match too. This needs **no** annotation, at any distance: with no accumulated `Base` to push inward, an unmet prerequisite travels outward instead — each layer that doesn't contribute the key republishes it as its own requirement (the propagation overload on `Middleware`), until some layer does.
 
   If no layer does, the requirement is still outstanding at the top and the composed stack has a **required** `ctx`. That is not an error by itself — it surfaces only where the stack is checked against `FetchHandler`, whose `ctx` is optional and to which a required one is not assignable. **An untyped `export default { fetch: app }` performs no such check**, so a stack missing its prerequisite entirely compiles clean, ships, and reads `undefined` on the first request:
@@ -66,7 +66,7 @@ Two type-level guarantees:
 
   Annotate the outermost call with `satisfies FetchHandler`, or put the stack in any `FetchHandler`-typed position (a typed export, `Deno.serve(app)`, …), to make that a build error instead. Unlike collision detection, the annotation is not the only route here — it is just the one that works at the point of definition.
 
-> **What `satisfies FetchHandler` is for.** Not accumulation — the innermost handler sees every upstream key ambiently at any nesting depth with no annotation at all, because an unannotated outermost call resolves `Base` to its constraint (the empty upstream), which is the same context the annotation would seed. What the annotation buys is (1) asserting the stack can be the `fetch` export — a stack whose `In` prerequisite nobody supplied has a required `ctx` and fails that check, which an untyped `export default { fetch: … }` would not (see Prerequisite enforcement above) — and (2) **collision detection**, which is the one guarantee nested handlers do not get for free: the produced handler type records the upstream a stack _requires_, never the keys it _contributes_, so an unannotated enclosing call has nothing to check its own key against and a duplicate key compiles silently. One annotation on the outermost call covers any depth, and adds no runtime code. `pipeline` has no such gap — it validates from its entries array — so prefer it where you can.
+> **What `satisfies FetchHandler` is for.** Two things only: asserting the stack can be the `fetch` export (above), and **collision detection** for nested handlers. It is _not_ needed for accumulation — an unannotated outermost call resolves `Base` to its constraint, the same empty upstream the annotation would seed, so `ctx` types at any depth either way. Collision detection is the one guarantee nesting doesn't get for free: the produced handler type records the upstream a stack _requires_, never the keys it _contributes_, so an unannotated enclosing call has nothing to check its own key against and a duplicate compiles silently. One annotation on the outermost call covers any depth, and adds no runtime code. `pipeline` has no such gap — prefer it where you can.
 
 ## Composition rules
 
@@ -98,11 +98,10 @@ This is the one place the request-side default is relaxed, and `function*` is th
 ## Threading state through the stack
 
 Each middleware's contribution lands on `ctx` for every middleware and handler
-inside it. Accumulation is typed either way — from the entries array under
-`pipeline`, and from the inward `Base` cascade with nested handlers — so the
-`satisfies FetchHandler` below is an assertion that the composed stack is usable
-as the `fetch` export, not a requirement for `ctx` to type. With nested handlers
-it does one more thing: it is what makes a duplicate key a compile error.
+inside it, typed either way — from the entries array under `pipeline`, from the
+inward `Base` cascade when nesting. The `satisfies FetchHandler` below is
+therefore an assertion that the stack can be the `fetch` export, not a
+requirement for `ctx` to type.
 
 ```ts
 import { pipeline } from '@supabase/middleware'

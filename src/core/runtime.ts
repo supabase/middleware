@@ -114,27 +114,23 @@ export type Handler<Ctx extends BaseContext = BaseContext> = (
  * optional and adds no runtime code. It does two things:
  *
  * - **Asserts the stack can be the `fetch` export.** Prerequisites are enforced
- *   between layers with no annotation at all. What is left over is the case
- *   where *no* layer supplies a declared `In` key: the requirement is republished
- *   all the way out, so the composed stack has a **required** `ctx`. That alone
- *   is not an error — a stack is just a function, and a required `ctx` is only
- *   wrong where the stack is handed to the host. This type is what makes that
- *   position explicit: its `ctx` is optional, and a required one is not
- *   assignable to it. An untyped
+ *   between layers with no annotation. What is left over is the case where *no*
+ *   layer supplies a declared `In` key: the requirement is republished all the
+ *   way out, so the stack has a **required** `ctx`. That alone is not an error —
+ *   a required `ctx` is only wrong where the stack is handed to the host, and
+ *   this type is what makes that position explicit (its `ctx` is optional, and a
+ *   required one is not assignable to it). An untyped
  *   `export default { fetch: app }` checks nothing, so without the annotation
  *   the stack compiles, ships, and reads `undefined` off `ctx` on the first
- *   request. Ordinary `satisfies`, not an anchor — and not the only route: any
- *   `FetchHandler`-typed position does the same job.
+ *   request. Any `FetchHandler`-typed position does the same job.
  * - **Turns on collision detection.** Two middleware contributing the same key
  *   are only caught under this annotation; see the `Middleware` overload set.
  *   One annotation on the outermost call covers any nesting depth.
  *
- * It is **not** needed for accumulation: the innermost handler sees every
- * upstream key ambiently at any depth without it, because an unannotated
- * outermost call resolves `Base` to its constraint — the empty upstream — which
- * is the same context an annotation would seed, and the cascade proceeds inward
- * from there. It is likewise not needed for cross-middleware dependencies
- * declared as `In` prerequisites (those travel outward), nor for
+ * It is **not** needed for accumulation: an unannotated outermost call resolves
+ * `Base` to its constraint — the empty upstream, the same context an annotation
+ * would seed — so the cascade reaches the innermost handler at any depth either
+ * way. Nor for `In` prerequisites (those travel outward), nor for
  * {@link pipeline} (which accumulates and validates from its entries array).
  */
 export type FetchHandler = (

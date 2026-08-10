@@ -75,13 +75,14 @@ function warnUnhonoredThirdArg(): void {
  *   empty upstream, which is exactly what a `satisfies FetchHandler` would seed
  *   — and the cascade proceeds inward from there.
  * - **Collision detection does.** Composing where the upstream already has the
- *   key resolves `Base` to a `Conflict<Key>` sentinel and the stack fails to
- *   typecheck, but only under `satisfies FetchHandler` on the outermost call.
- *   The produced handler type records the upstream a stack *requires*, never the
- *   keys it *contributes*, so an unannotated enclosing call has nothing to check
- *   its own key against and a duplicate compiles silently. One annotation covers
- *   any depth. {@link pipeline} has no such gap — it validates from its entries
- *   array — so a stack that cannot carry the annotation is better written flat.
+ *   key resolves the handler parameter to a {@link Conflict} sentinel (see
+ *   {@link GuardConflict}) and the stack fails to typecheck — but only under
+ *   `satisfies FetchHandler` on the outermost call. The produced handler type
+ *   records the upstream a stack *requires*, never the keys it *contributes*, so
+ *   an unannotated enclosing call has nothing to check its own key against and a
+ *   duplicate compiles silently. One annotation covers any depth.
+ *   {@link pipeline} has no such gap — it validates from its entries array — so
+ *   a stack that cannot carry the annotation is better written flat.
  *
  * @typeParam Key - The literal-string key contributed to ctx.
  * @typeParam Config - Configuration object the middleware accepts.

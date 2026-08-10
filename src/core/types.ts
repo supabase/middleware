@@ -20,13 +20,13 @@
  * compile either way, but on that path the reported error is an overload
  * mismatch on the *enclosing* call, in which the inner handler's `ctx` has
  * collapsed to `never` (printed as `ctx?: undefined`); the collision is never
- * named, and the key only shows up incidentally, inside the expected upstream
- * `ctx`. Keep the sentinel on a parameter.
+ * named, and the colliding key may not appear at all. Keep the sentinel on a
+ * parameter.
  *
- * The two paths differ only in how much surrounds the message. `pipeline` is a
- * single signature, so it reports a one-line TS2345. `Middleware` is an overload
- * set, so it reports TS2769 and the sentinel appears inside the per-overload
- * breakdown — the first line of it, but a breakdown nonetheless.
+ * The two paths differ only in how much surrounds the message: `pipeline` is a
+ * single signature and reports a one-line TS2345, while `Middleware` is an
+ * overload set and reports TS2769 with the sentinel on the first line of the
+ * per-overload breakdown.
  */
 export type Conflict<Key extends string> =
   `middleware-conflict: key '${Key}' is already present on the upstream context`
