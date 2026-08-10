@@ -12,7 +12,7 @@ The package root exports:
 - **`seedContext`** — mint a marked base context (for hosts embedding the engine).
 - **`RuntimeName` / `BaseContext` / `Handler`** — the runtime/context types.
 - **`FetchHandler`** — the type of a stack handed to the host (the `fetch` export, `Deno.serve(app)`, …). Annotating the outermost handler with it (`… satisfies FetchHandler`) asserts the stack can be the `fetch` export, and is what turns on collision detection for nested handlers. Accumulation and `In` prerequisites need no annotation.
-- **`Conflict` / `GuardConflict`** — the sentinel type surfaced on a key collision, and the guard that sites it on the handler parameter.
+- **`Conflict` / `NoConflict`** — the sentinel type surfaced on a key collision, and the guard that sites it on the handler parameter.
 
 ## Quick start (consumer)
 
@@ -132,7 +132,7 @@ export default {
 | `defineMiddleware(spec)`                    | Author helper: declare a middleware. Returns a `(config, handler)` callable.                  |
 | `FetchHandler`                              | The type of a stack handed to the host (the `fetch` export, `Deno.serve(app)`, …). Required for collision detection in nested handlers; also rejects a stack whose `In` prerequisite nobody supplied. Prerequisites between layers are enforced without it. |
 | `Conflict<Key>`                             | Sentinel string the handler parameter resolves to when a middleware would shadow an upstream key. |
-| `GuardConflict<Key, Base, Handler>`         | The collision check `Middleware` applies — `Handler` when `Key` is free on `Base`, the sentinel when it isn't. |
+| `NoConflict<Key, Base, Handler>`            | The collision check `Middleware` applies — `Handler` when `Key` is free on `Base`, the sentinel when it isn't. |
 | `Middleware<Key, Config, In, Contribution>` | The shape of a middleware produced by `defineMiddleware`.                                     |
 | `getEnv(key)` / `runtimeName`               | Portable environment access (platform env first, host env fallback) and the std-env host name. |
 | `seedContext(platformArg?)`                 | Mint a marked base context — for hosts embedding the engine (e.g. `@supabase/server`).        |

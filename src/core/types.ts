@@ -8,20 +8,19 @@
  * Sentinel type used to surface a key collision with the upstream context as a
  * TypeScript error at the call site. Both composition paths put it in the
  * *handler parameter* position — `pipeline` via `Validate`, nesting via
- * `GuardConflict` — because that is the position TypeScript prints:
+ * `NoConflict` — because that is the position TypeScript prints:
  *
  * ```
  * Argument of type '(req, ctx) => …' is not assignable to parameter of type
  * "middleware-conflict: key 'alpha' is already present on the upstream context"
  * ```
  *
- * The alternative siting — a failed `Base` constraint, which is what
- * `NoConflict` produces — is substituted silently. The stack still fails to
- * compile either way, but on that path the reported error is an overload
- * mismatch on the *enclosing* call, in which the inner handler's `ctx` has
- * collapsed to `never` (printed as `ctx?: undefined`); the collision is never
- * named, and the colliding key may not appear at all. Keep the sentinel on a
- * parameter.
+ * The alternative siting — the sentinel in a failed `Base` constraint — is
+ * substituted silently. The stack still fails to compile either way, but on that
+ * path the reported error is an overload mismatch on the *enclosing* call, in
+ * which the inner handler's `ctx` has collapsed to `never` (printed as
+ * `ctx?: undefined`); the collision is never named, and the colliding key may
+ * not appear at all. Keep the sentinel on a parameter.
  *
  * The two paths differ only in how much surrounds the message: `pipeline` is a
  * single signature and reports a one-line TS2345, while `Middleware` is an

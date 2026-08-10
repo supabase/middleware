@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { withCors } from '../middleware/cors/with-cors.js'
 import { withFeatureFlag } from '../middleware/feature-flag/with-feature-flag.js'
 import { defineMiddleware } from './define-middleware.js'
-import type { GuardConflict } from './define-middleware.js'
+import type { NoConflict } from './define-middleware.js'
 import { pipeline } from './pipeline.js'
 import type { BaseContext, FetchHandler } from './runtime.js'
 import { getEnv, seedContext } from './runtime.js'
@@ -873,7 +873,7 @@ describe('type guarantees (tsc-verified)', () => {
   // it directly: on a collision the parameter a call is checked against *is* the
   // sentinel, so what TypeScript prints is this string.
   it('collision: the guard resolves to the sentinel string, verbatim', () => {
-    const _msg: GuardConflict<'foo', { foo: { v: number } }, never> =
+    const _msg: NoConflict<'foo', { foo: { v: number } }, never> =
       "middleware-conflict: key 'foo' is already present on the upstream context"
     // Mutually assignable with `Conflict<'foo'>`, so the guard cannot quietly
     // widen to `string` and keep this test passing.
@@ -883,7 +883,7 @@ describe('type guarantees (tsc-verified)', () => {
 
   it('collision: the guard passes the handler through when the key is free', () => {
     type H = (req: Request, ctx: BaseContext) => Promise<Response>
-    const _passthrough: GuardConflict<'foo', { bar: { v: number } }, H> = innerOk
+    const _passthrough: NoConflict<'foo', { bar: { v: number } }, H> = innerOk
     void _passthrough
   })
 
@@ -892,7 +892,7 @@ describe('type guarantees (tsc-verified)', () => {
     // `keyof any` is every key, so without the `IsAny` arm this would report a
     // collision for any key at all — `vi.fn`-inferred handlers hit this.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const _anyBase: GuardConflict<'foo', any, H> = innerOk
+    const _anyBase: NoConflict<'foo', any, H> = innerOk
     void _anyBase
   })
 

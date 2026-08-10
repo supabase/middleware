@@ -57,7 +57,7 @@ deno add jsr:@supabase/middleware
 
 | Import                                  | What it does                                                                                                                     |
 | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `@supabase/middleware`              | `pipeline`, `defineMiddleware`, `getEnv`, `runtimeName`, `seedContext`, and the core types: `Entry`, `FetchHandler`, `Middleware`, `Conflict`, `BaseContext`. |
+| `@supabase/middleware`              | `pipeline`, `defineMiddleware`, `getEnv`, `runtimeName`, `seedContext`, and the core types: `Entry`, `FetchHandler`, `Middleware`, `BaseContext`. |
 | `@supabase/middleware/feature-flag` | Provider-agnostic feature flag — admit or short-circuit per request.                                                             |
 | `@supabase/middleware/cors`         | CORS — answers preflight and stamps response headers (the worked example of the response seam).                                  |
 

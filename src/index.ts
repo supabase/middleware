@@ -15,7 +15,6 @@
 
 export { defineMiddleware } from './core/define-middleware.js'
 export type {
-  GuardConflict,
   IsAny,
   Middleware,
   NoConflict,

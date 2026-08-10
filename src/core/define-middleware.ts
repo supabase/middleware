@@ -76,7 +76,7 @@ function warnUnhonoredThirdArg(): void {
  *   — and the cascade proceeds inward from there.
  * - **Collision detection does.** Composing where the upstream already has the
  *   key resolves the handler parameter to a {@link Conflict} sentinel (see
- *   {@link GuardConflict}) and the stack fails to typecheck — but only under
+ *   {@link NoConflict}) and the stack fails to typecheck — but only under
  *   `satisfies FetchHandler` on the outermost call. The produced handler type
  *   records the upstream a stack *requires*, never the keys it *contributes*, so
  *   an unannotated enclosing call has nothing to check its own key against and a
@@ -255,43 +255,23 @@ export type IsAny<T> = boolean extends (T extends never ? true : false)
   : false
 
 /**
- * Resolves to a {@link Conflict} sentinel when `Base` already carries `Key`,
- * surfacing the collision at the call site (the sentinel string is not an
- * `object`, so the constraint fails).
+ * The collision check {@link Middleware} applies: resolves to `Handler` when
+ * `Key` is free on `Base`, and to a {@link Conflict} sentinel when it is not.
  *
- * **Prefer {@link GuardConflict}.** This form sites the sentinel in a `Base`
- * constraint, and TypeScript substitutes a failed constraint silently — the
- * stack still fails to compile, but the message names neither the key nor the
- * collision. The core moved off it for that reason; it stays exported because it
- * is public API and remains correct for a bespoke signature that has nowhere to
- * put a parameter-position guard.
- */
-export type NoConflict<Key extends string, Base> =
-  IsAny<Base> extends true
-    ? object
-    : Key extends keyof Base
-      ? Conflict<Key>
-      : object
-
-/**
- * The collision check {@link Middleware} uses: resolves to the `Handler` type
- * when `Key` is free on `Base`, and to a {@link Conflict} sentinel when it is
- * not — so the sentinel lands in the *handler parameter* position rather than in
- * a `Base` constraint.
- *
- * That siting is the whole point. TypeScript substitutes a failed constraint
- * silently, but prints a failed parameter verbatim, so the sentinel's text
- * reaches the reader and the error is reported on the offending call instead of
- * the one enclosing it. {@link pipeline} has always taken this route (see
- * `Validate`); this is the nesting equivalent.
+ * **Site it on the handler parameter, not the `Base` constraint.** TypeScript
+ * substitutes a failed constraint silently but prints a failed parameter
+ * verbatim, so on the parameter the sentinel's text reaches the reader and the
+ * error is reported on the offending call rather than the one enclosing it.
+ * {@link pipeline} has always taken this route (see `Validate`); the
+ * {@link Middleware} overloads are the nesting equivalent.
  *
  * Reuse it in a middleware with a bespoke generic signature (e.g. one that adds
- * a `Payload` type parameter) by wrapping the handler parameter, and leave the
+ * a `Payload` type parameter) by wrapping the handler parameter and leaving the
  * `Base` constraint to `In & BaseContext`:
  *
  * ```ts
  * <Base extends In & BaseContext>(
- *   handler: GuardConflict<Key, Base, (req: Request, ctx: Base & …) => Promise<Response>>,
+ *   handler: NoConflict<Key, Base, (req: Request, ctx: Base & …) => Promise<Response>>,
  * ): Produced<Base, In>
  * ```
  *
@@ -299,8 +279,10 @@ export type NoConflict<Key extends string, Base> =
  * will accept the call the guarded one rejected, resolve its own `Base` to
  * something unusable, and push the error back out to the enclosing call — which
  * is the failure mode this type exists to remove.
+ *
+ * @typeParam Handler - The handler type to resolve to when `Key` is free.
  */
-export type GuardConflict<Key extends string, Base, Handler> =
+export type NoConflict<Key extends string, Base, Handler> =
   IsAny<Base> extends true
     ? Handler
     : Key extends keyof Base
@@ -339,9 +321,9 @@ type MiddlewareArgs<Config, Handler> = undefined extends Config
  * Three call signatures:
  * - **Handler (cascade)** — `mw(config, handler)` (or `mw(handler)`) returns the
  *   produced fetch handler, with `Base` pushed *inward* from the contextual type
- *   of the call's return. `Base` is constrained to
- *   `In & BaseContext & NoConflict<Key, Base>`, so both prerequisite enforcement
- *   and collision detection surface at the call site.
+ *   of the call's return. `Base` is constrained to `In & BaseContext` for
+ *   prerequisite enforcement, and the handler parameter is wrapped in
+ *   {@link NoConflict} for collision detection — both surface at the call site.
  * - **Handler (propagation)** — the same call when the wrapped handler declares
  *   prerequisites this layer cannot meet from the inward push alone. `Ctx` is
  *   read *outward* off that handler and re-published as this layer's own
@@ -385,7 +367,7 @@ export interface Middleware<
   <Base extends In & BaseContext>(
     ...args: MiddlewareArgs<
       Config,
-      GuardConflict<
+      NoConflict<
         Key,
         Base,
         (
@@ -425,7 +407,7 @@ export interface Middleware<
   >(
     ...args: MiddlewareArgs<
       Config,
-      GuardConflict<Key, Base, (req: Request, ctx: Ctx) => Promise<Response>>
+      NoConflict<Key, Base, (req: Request, ctx: Ctx) => Promise<Response>>
     >
   ): Produced<Base & Omit<Ctx, Key>, In & Omit<Ctx, Key>>
   // Config-only call — `mw(config)` (or `mw()` for config-less) returns an
