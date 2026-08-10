@@ -110,8 +110,11 @@ export type Handler<Ctx extends BaseContext = BaseContext> = (
  * The type of a composed stack used as a runtime `fetch` entry. Annotating the
  * outermost handler with this (`… satisfies FetchHandler`) is the optional,
  * type-only anchor that lets the innermost handler see *every* upstream key
- * ambiently. It is not needed for cross-middleware dependencies declared as `In`
- * prerequisites — those type without any annotation.
+ * ambiently. One anchor on the outermost call is enough at any nesting depth —
+ * the context it seeds cascades inward through every layer. It is not needed for
+ * cross-middleware dependencies declared as `In` prerequisites, nor for
+ * {@link pipeline} (which accumulates from its entries array) — those type
+ * without any annotation.
  */
 export type FetchHandler = (
   req: Request,

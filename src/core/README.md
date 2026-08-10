@@ -58,7 +58,7 @@ Two type-level guarantees:
 - **Collision detection.** If a middleware composes where the upstream already has its key, its `ctx` resolves to a `Conflict<Key>` sentinel string and the stack fails to typecheck. A second apply of the same middleware is a compile error, not a silent overwrite. (Surfaces under the `satisfies FetchHandler` anchor — see below.)
 - **Prerequisite enforcement.** Middleware declare the upstream shape they require via `In`. The wrapper constrains `Base extends In & BaseContext`. Composing where the upstream doesn't provide those keys is a type error. A middleware that declares prerequisites can't be a bare entry — it must be nested inside a wrapper that supplies those keys. Prerequisite-declared keys type with **no** anchor required.
 
-> **The anchor.** Cross-middleware dependencies declared via `In` type with zero ceremony. For the innermost handler to _ambiently_ see every upstream key (and for collision detection to fire), annotate the outermost handler with `satisfies FetchHandler` — a type-only anchor that resolves the accumulated `Base`. It adds no runtime code.
+> **The anchor.** Cross-middleware dependencies declared via `In` type with zero ceremony. For the innermost handler to _ambiently_ see every upstream key (and for collision detection to fire), annotate the outermost handler with `satisfies FetchHandler` — a type-only anchor that resolves the accumulated `Base`. It adds no runtime code. One anchor covers the whole stack: it seeds a context that cascades inward through any nesting depth, so it belongs on the outermost call only.
 
 ## Composition rules
 
@@ -90,9 +90,10 @@ This is the one place the request-side default is relaxed, and `function*` is th
 ## Threading state through the stack
 
 Each middleware's contribution lands on `ctx` for every middleware and handler
-inside it. With `pipeline`, this accumulation is typed from the array — add
-`satisfies FetchHandler` on the outermost call to anchor ambient accumulation
-and collision detection:
+inside it. With `pipeline`, this accumulation is typed from the entries array
+itself, so no anchor is needed — the `satisfies FetchHandler` below is just an
+assertion that the composed stack is usable as a `fetch` entry. Hand-nesting is
+where the anchor earns its keep:
 
 ```ts
 import { pipeline } from '@supabase/middleware'
