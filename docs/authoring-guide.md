@@ -5,30 +5,55 @@ title: Build your own middleware
 # Build your own middleware
 
 This guide walks the full path: from `defineMiddleware` to publishing your own
-package, to composing it in the same `pipeline` array as the first-party
-entries. Every code block below is a **complete file** with its path in the
-first line — write it to that path and it compiles. Nothing is elided.
+package, to composing it alongside the built-in entries. Every code block
+**labeled with a path** is a complete file — write it to that path and it
+compiles. Unlabeled blocks are fragments, and elide with `{ ... }`.
 
 The example is `withValidatedBody`, a middleware that validates a JSON request
 body and short-circuits with `400` when it fails. It is deliberately shaped like
-the first-party [`withFeatureFlag`](../src/middleware/feature-flag/with-feature-flag.ts),
+the built-in [`withFeatureFlag`](../src/middleware/feature-flag/with-feature-flag.ts),
 so anything you read here transfers to the shipped source and back.
 
 ## 0. The destination
 
-This is where you end up — your middleware sitting alongside first-party ones in
-a single flat array, every contribution typed on `ctx`:
+This is where you end up — your middleware sitting alongside the built-in ones
+in a single flat array, every contribution typed on `ctx`, wired straight into
+the runtime's `fetch`:
 
 ```ts
-pipeline(
-  [withCors({}), withFeatureFlag({ ... }), withValidatedBody({ ... })],
-  async (_req, ctx) => Response.json({ data: ctx.validatedBody.data }),
-)
+export default {
+  fetch: pipeline(
+    [withCors({}), withFeatureFlag({ ... }), withValidatedBody({ ... })],
+    async (_req, ctx) => Response.json({ data: ctx.validatedBody.data }),
+  ),
+}
 ```
 
 There is no registry to join and no plugin interface to implement. A middleware
-is a function produced by `defineMiddleware`; first-party and third-party
-middleware are the same kind of thing, built with the same primitive.
+is a function produced by `defineMiddleware`; the ones this package ships and
+the ones you publish are the same kind of thing, built with the same primitive.
+
+### `pipeline`, or nesting
+
+`pipeline` is a convenience, not a requirement. Entries nest directly, and the
+result is the same handler:
+
+```ts
+export default {
+  fetch: withCors({}, withFeatureFlag({ ... }, withValidatedBody({ ... },
+    async (_req, ctx) => Response.json({ data: ctx.validatedBody.data }),
+  ))) satisfies FetchHandler,
+}
+```
+
+Nesting costs you the flat reading order past two or three entries, and it
+**requires** the `satisfies FetchHandler` anchor — without it the handler does
+not see upstream keys ambiently, and a duplicate key compiles silently. What it
+buys you is that `FetchHandler` is a _type_, so a consumer composing only
+third-party middleware needs no runtime import from `@supabase/middleware` at
+all — which is exactly why §2 re-exports the type from your own package.
+
+The rest of this guide uses `pipeline`.
 
 ### Which form do you need?
 
@@ -182,7 +207,7 @@ lets the package publish to JSR, which rejects inferred public types.
 
 **`data` is `unknown` on purpose,** because this example accepts any validator.
 A middleware written for one domain should make its contribution concrete
-instead — that is what the first-party middleware do, and it is what makes
+instead — that is what the built-in middleware do, and it is what makes
 `ctx.yourKey` genuinely useful to a handler without a cast.
 
 **Explicit reject config beats a thrown error.** Returning a `Response` is not
@@ -295,7 +320,8 @@ export type {
   ValidatedBodyContribution,
 } from './with-validated-body.js'
 
-// Re-exported so consumers can write `satisfies FetchHandler` with one import.
+// Re-exported so a consumer who hand-nests instead of using `pipeline` can
+// write `satisfies FetchHandler` without importing @supabase/middleware.
 export type { FetchHandler } from '@supabase/middleware'
 ```
 
@@ -465,7 +491,7 @@ registry, so two copies of the package loaded side by side still recognize each
 other's contexts. A version skew between your middleware and the consumer's is
 not a correctness problem.
 
-## 5. Compose it with first-party middleware
+## 5. Compose it with the built-in middleware
 
 ```ts
 // server.ts
@@ -489,8 +515,8 @@ export default {
       }),
     ],
     async (_req, ctx) => {
-      ctx.cors // from withCors           — first-party
-      ctx.featureFlag // from withFeatureFlag    — first-party
+      ctx.cors // from withCors           — built-in
+      ctx.featureFlag // from withFeatureFlag    — built-in
       ctx.validatedBody // from withValidatedBody  — yours
 
       return Response.json({
@@ -676,7 +702,7 @@ Rules for the seam:
 
 The runtime picks the path from what the body returns, so the plain `async` case
 is unaffected. [`withCors`](../src/middleware/cors/with-cors.ts) is the
-first-party worked example: it answers preflight with a `return` before the
+built-in worked example: it answers preflight with a `return` before the
 `yield`, and stamps headers after.
 
 ## Rules
@@ -700,15 +726,18 @@ first-party worked example: it answers preflight with a `return` before the
 7. **NEVER** import from `node:*`. Web Fetch APIs only, so the middleware runs
    on Deno, Cloudflare Workers, Bun, and Node alike.
 8. **MUST** return a `Response` to short-circuit, rather than throwing. A
-   `Response` is not an error — it can carry any status.
+   `Response` is not an error — it can carry any status. This is about rejecting
+   **requests**. Surfacing **misconfiguration** — a missing API key, an
+   unparseable option — by throwing is fine and often right: there is no request
+   to blame, and errors that escape `run` propagate to the host.
 
 ## See also
 
 - [Composition primitives](../src/core/README.md) — `ctx` shape, conflict and
   prerequisite enforcement, the response seam.
-- [`feature-flag`](../src/middleware/feature-flag/README.md) — the first-party
+- [`feature-flag`](../src/middleware/feature-flag/README.md) — the built-in
   request-side worked example.
-- [`cors`](../src/middleware/cors/README.md) — the first-party response-seam
+- [`cors`](../src/middleware/cors/README.md) — the built-in response-seam
   worked example.
 - [Adding a middleware to this repository](../src/middleware/README.md) — for
   built-ins rather than standalone packages.
