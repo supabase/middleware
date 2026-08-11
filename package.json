@@ -56,7 +56,10 @@
   "types": "./dist/index.d.cts",
   "sideEffects": false,
   "files": [
-    "dist"
+    "dist",
+    "docs",
+    "skills",
+    "src/**/README.md"
   ],
   "engines": {
     "node": ">=22"
