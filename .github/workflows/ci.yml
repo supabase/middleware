@@ -27,6 +27,9 @@ jobs:
 
       - run: pnpm lint
 
+      - name: Check formatting (prettier)
+        run: pnpm format:check
+
       - run: pnpm test
 
       - run: pnpm build

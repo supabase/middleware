@@ -69,6 +69,7 @@
     "dev": "tsdown --watch",
     "docs": "typedoc",
     "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
     "smoke": "node scripts/smoke-load.mjs",

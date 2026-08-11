@@ -67,8 +67,14 @@ pnpm dev
 Format all code using Prettier:
 
 ```bash
-pnpm format
+pnpm format        # write
+pnpm format:check  # verify only — this is what CI runs
 ```
+
+CI fails on unformatted files, so run `pnpm format` before pushing. Generated
+files are excluded in [`.prettierignore`](./.prettierignore): the lockfiles and
+`CHANGELOG.md`, which release-please owns. Build output (`dist`, `api-docs`) is
+already covered because Prettier reads `.gitignore` as well.
 
 ## Testing
 
