@@ -6,7 +6,7 @@ Everything is plain Web Fetch, so the same stack runs unchanged across every run
 
 The package root exports:
 
-- **`defineMiddleware`** — for _authors_ writing a new middleware. See the [authoring guide](../middleware/README.md).
+- **`defineMiddleware`** — for _authors_ writing a new middleware. See the [authoring guide](../../docs/authoring-guide.md).
 - **`Middleware`** — the type a `defineMiddleware` call produces.
 - **`getEnv` / `runtimeName`** — portable environment access and the std-env-detected host name.
 - **`seedContext`** — mint a marked base context (for hosts embedding the engine).
@@ -143,6 +143,6 @@ export default {
 
 ## See also
 
-- [Authoring guide](../middleware/README.md) — write your own middleware.
+- [Authoring guide](../../docs/authoring-guide.md) — write your own middleware.
 - [`feature-flag/`](../middleware/feature-flag/) — the worked example (request-side).
 - [`cors/`](../middleware/cors/) — the worked example of the response seam (`async function*`).

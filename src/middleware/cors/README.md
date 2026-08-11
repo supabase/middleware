@@ -42,4 +42,4 @@ This is a small, practical implementation, not a spec-exhaustive one. If you nee
 ## See also
 
 - [Core README — the response seam](../../core/README.md)
-- [Authoring guide](../README.md)
+- [Authoring guide](../../../docs/authoring-guide.md)

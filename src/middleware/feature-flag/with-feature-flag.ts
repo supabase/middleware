@@ -7,7 +7,7 @@
  * admits with the verdict at `ctx.featureFlag` or short-circuits with a
  * configurable response.
  *
- * Read alongside `src/middleware/README.md` and `src/core/README.md` — this
+ * Read alongside `docs/authoring-guide.md` and `src/core/README.md` — this
  * file is referenced from both as the worked example of the pattern.
  */
 
@@ -128,8 +128,11 @@ export const withFeatureFlag: Middleware<
   key: 'featureFlag',
   /**
    * Two-stage function. The outer `(config) =>` runs once when the consumer
-   * constructs the middleware — initialize per-instance state here (clients,
-   * computed config). The inner `(req, _ctx) =>` runs per request.
+   * constructs the middleware — derive computed config here. The inner
+   * `(req, _ctx) =>` runs per request. Anything built from an environment value
+   * belongs in the inner stage, constructed lazily on first request: `getEnv`
+   * returns `undefined` at construction time on Cloudflare Workers, where
+   * bindings arrive per request (see `docs/authoring-guide.md`).
    *
    * Return a `Response` to short-circuit (the inner handler never runs), or a
    * single-key object `{ [key]: contribution }` to fall through. The runtime
