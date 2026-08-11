@@ -1,0 +1,16 @@
+{
+  "name": "ts-floor-fixture",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Typechecks a consumer against the published types at the minimum supported TypeScript version. Not part of the pnpm workspace — it pins its own tsc.",
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/middleware": "link:../.."
+  },
+  "devDependencies": {
+    "typescript": "5.4.2"
+  }
+}

@@ -74,7 +74,9 @@
     "smoke": "node scripts/smoke-load.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "typecheck:min": "pnpm --dir test/ts-floor install --ignore-workspace && pnpm --dir test/ts-floor exec tsc --noEmit --project ../../tsconfig.json",
+    "typecheck:consumer": "pnpm --dir test/ts-floor install --ignore-workspace && pnpm --dir test/ts-floor exec tsc --noEmit"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.4",
@@ -88,5 +90,13 @@
   },
   "dependencies": {
     "std-env": "^4.2.0"
+  },
+  "peerDependencies": {
+    "typescript": ">=5.4"
+  },
+  "peerDependenciesMeta": {
+    "typescript": {
+      "optional": true
+    }
   }
 }
