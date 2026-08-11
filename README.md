@@ -7,7 +7,7 @@
 
 Composable, type-safe middleware for Web Fetch handlers.
 
-> **Status: public alpha (0.1).** The core engine and API are still settling — expect breaking changes before a stable 1.0. Follow [releases](https://github.com/supabase/middleware/releases) for changes.
+> **Status: public alpha.** The core engine and API are still settling — expect breaking changes before a stable 1.0. The badge above tracks the current release; follow [releases](https://github.com/supabase/middleware/releases) for changes.
 
 A **middleware** is a `withFoo` function. Call it with just the config — `withFoo(config)` — to get an **`Entry`**: a typed placeholder that carries the middleware's key, prerequisites, and contribution as phantom types. Pass a flat array of entries to `pipeline` with a final handler; `pipeline` folds the array into nested calls at runtime and every entry's contribution lands on `ctx` in order. No registry, no `app.use()`, no nesting.
 
@@ -20,7 +20,10 @@ export default {
   fetch: pipeline(
     [
       withCors({}),
-      withFeatureFlag({ name: 'beta', evaluate: (req) => req.headers.has('x-beta') }),
+      withFeatureFlag({
+        name: 'beta',
+        evaluate: (req) => req.headers.has('x-beta'),
+      }),
     ],
     async (_req, ctx) => Response.json({ flag: ctx.featureFlag.name }),
   ),
@@ -55,11 +58,11 @@ deno add jsr:@supabase/middleware
 
 ## What's in the box
 
-| Import                                  | What it does                                                                                                                     |
-| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Import                              | What it does                                                                                                                                      |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `@supabase/middleware`              | `pipeline`, `defineMiddleware`, `getEnv`, `runtimeName`, `seedContext`, and the core types: `Entry`, `FetchHandler`, `Middleware`, `BaseContext`. |
-| `@supabase/middleware/feature-flag` | Provider-agnostic feature flag — admit or short-circuit per request.                                                             |
-| `@supabase/middleware/cors`         | CORS — answers preflight and stamps response headers (the worked example of the response seam).                                  |
+| `@supabase/middleware/feature-flag` | Provider-agnostic feature flag — admit or short-circuit per request.                                                                              |
+| `@supabase/middleware/cors`         | CORS — answers preflight and stamps response headers (the worked example of the response seam).                                                   |
 
 ## How it composes
 
@@ -71,7 +74,12 @@ import type { FetchHandler } from '@supabase/middleware'
 import { withFeatureFlag } from '@supabase/middleware/feature-flag'
 
 // A middleware is just a `defineMiddleware` call — bundled or your own.
-const withRequestId = defineMiddleware<'requestId', void, Record<never, never>, string>({
+const withRequestId = defineMiddleware<
+  'requestId',
+  void,
+  Record<never, never>,
+  string
+>({
   key: 'requestId',
   run: () => async (req) => ({
     requestId: req.headers.get('x-request-id') ?? crypto.randomUUID(),
@@ -81,11 +89,14 @@ const withRequestId = defineMiddleware<'requestId', void, Record<never, never>, 
 export default {
   fetch: pipeline(
     [
-      withRequestId(),    // no config — still returns an Entry
-      withFeatureFlag({ name: 'beta', evaluate: (req) => req.headers.has('x-beta') }),
+      withRequestId(), // no config — still returns an Entry
+      withFeatureFlag({
+        name: 'beta',
+        evaluate: (req) => req.headers.has('x-beta'),
+      }),
     ],
     async (_req, ctx) => {
-      ctx.requestId   //  from withRequestId
+      ctx.requestId //  from withRequestId
       ctx.featureFlag //  from withFeatureFlag — ctx holds middleware contributions, nothing else
       return new Response(null, { status: 200 })
     },

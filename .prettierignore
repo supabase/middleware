@@ -1,3 +1,8 @@
 node_modules
 dist
 pnpm-lock.yaml
+test/ts-floor/pnpm-lock.yaml
+
+# Generated and owned by release-please. Reformatting it here would fight the
+# release automation, which appends in its own style on every release.
+CHANGELOG.md

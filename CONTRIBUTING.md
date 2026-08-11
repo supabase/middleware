@@ -67,8 +67,14 @@ pnpm dev
 Format all code using Prettier:
 
 ```bash
-pnpm format
+pnpm format        # write
+pnpm format:check  # verify only — this is what CI runs
 ```
+
+CI fails on unformatted files, so run `pnpm format` before pushing. Generated
+files are excluded in [`.prettierignore`](./.prettierignore): the lockfiles and
+`CHANGELOG.md`, which release-please owns. Build output (`dist`, `api-docs`) is
+already covered because Prettier reads `.gitignore` as well.
 
 ## Testing
 
@@ -89,6 +95,27 @@ pnpm lint       # check
 pnpm lint:fix   # fix
 pnpm typecheck  # tsc --noEmit
 ```
+
+### The TypeScript floor
+
+`pnpm typecheck` runs the repo's own TypeScript. Consumers may be on an older
+one, so CI also checks both published artifacts against the **minimum** version
+the README claims — currently 5.4, because the types use `NoInfer`:
+
+```bash
+pnpm typecheck:min       # src/**/*.ts — what JSR ships
+pnpm typecheck:consumer  # dist/*.d.ts — what npm ships (run pnpm build first)
+```
+
+Both use the `tsc` pinned in [`test/ts-floor`](./test/ts-floor), which is also
+where the consumer fixture lives. Below the floor the interesting failure is not
+a different error but a _missing_ one — collision detection goes quiet and a
+duplicate key compiles — so the fixture pins its negative cases with
+`@ts-expect-error` and fails on the unused directive.
+
+If a change needs a newer TypeScript, raising the floor is deliberate: bump
+`typescript` in `test/ts-floor/package.json` and the Requirements section of the
+root README in the same commit.
 
 ## Writing a middleware
 

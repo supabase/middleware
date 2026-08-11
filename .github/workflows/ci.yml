@@ -27,12 +27,24 @@ jobs:
 
       - run: pnpm lint
 
+      - name: Check formatting (prettier)
+        run: pnpm format:check
+
       - run: pnpm test
 
       - run: pnpm build
 
       - name: Smoke-test built entrypoints load in raw Node
         run: pnpm smoke
+
+      # The floor is TypeScript 5.4 (`NoInfer`), pinned in test/ts-floor. Two
+      # checks because there are two published artifacts: JSR ships `src/**/*.ts`
+      # and npm ships `dist/*.d.ts`, so neither check covers the other.
+      - name: Typecheck source at the minimum supported TypeScript (JSR consumers)
+        run: pnpm typecheck:min
+
+      - name: Typecheck a consumer against the published types (npm consumers)
+        run: pnpm typecheck:consumer
 
       - name: Check type exports (attw)
         run: pnpm check-exports

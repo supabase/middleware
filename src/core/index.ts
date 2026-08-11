@@ -16,11 +16,7 @@
  */
 
 export { defineMiddleware } from './define-middleware.js'
-export type {
-  IsAny,
-  Middleware,
-  NoConflict,
-} from './define-middleware.js'
+export type { IsAny, Middleware, NoConflict } from './define-middleware.js'
 export { pipeline } from './pipeline.js'
 export { getEnv, runtimeName, seedContext } from './runtime.js'
 export type {
