@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { withCors } from '../middleware/cors/with-cors.js'
 import { withFeatureFlag } from '../middleware/feature-flag/with-feature-flag.js'
 import { defineMiddleware } from './define-middleware.js'
+import type { NoConflict } from './define-middleware.js'
 import { pipeline } from './pipeline.js'
 import type { BaseContext, FetchHandler } from './runtime.js'
 import { getEnv, seedContext } from './runtime.js'
-import type { Entry } from './types.js'
+import type { Conflict, Entry } from './types.js'
 
 const innerOk = async () => Response.json({ ok: true })
 
@@ -530,13 +532,11 @@ describe('auto-curry: mw(config) returns an Entry', () => {
       run: (config) => async () => ({ greeting: { hello: config.who } }),
     })
 
-    const nested = withGreeting(
-      { who: 'world' },
-      async (_req, ctx) => Response.json({ msg: ctx.greeting.hello }),
+    const nested = withGreeting({ who: 'world' }, async (_req, ctx) =>
+      Response.json({ msg: ctx.greeting.hello }),
     )
-    const flat = pipeline(
-      [withGreeting({ who: 'world' })],
-      async (_req, ctx) => Response.json({ msg: ctx.greeting.hello }),
+    const flat = pipeline([withGreeting({ who: 'world' })], async (_req, ctx) =>
+      Response.json({ msg: ctx.greeting.hello }),
     )
 
     const [nestedRes, flatRes] = await Promise.all([
@@ -559,9 +559,8 @@ describe('auto-curry: mw(config) returns an Entry', () => {
     const withTag = passing('tag', { v: 'ok' })
 
     const nested = withTag(async (_req, ctx) => Response.json({ v: ctx.tag.v }))
-    const flat = pipeline(
-      [withTag()],
-      async (_req, ctx) => Response.json({ v: ctx.tag.v }),
+    const flat = pipeline([withTag()], async (_req, ctx) =>
+      Response.json({ v: ctx.tag.v }),
     )
 
     const [nestedRes, flatRes] = await Promise.all([
@@ -593,16 +592,153 @@ describe('auto-curry: mw(config) returns an Entry', () => {
   it('type guarantee: mw() satisfies Entry for config-less middleware', () => {
     const withTag = passing('tag', { v: 'ok' })
 
-    const _entry = withTag() satisfies Entry<'tag', Record<never, never>, { v: string }>
+    const _entry = withTag() satisfies Entry<
+      'tag',
+      Record<never, never>,
+      { v: string }
+    >
     void _entry
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Four-deep nesting, end to end: real shipped middleware, an `In` prerequisite
+// declared four layers down, and the stack actually invoked. The `type
+// guarantees` block below proves depth-4 accumulation *compiles*; this proves
+// the same stack runs and that every layer's contribution arrives at the
+// innermost handler with the value it was given.
+// ---------------------------------------------------------------------------
+describe('four-deep nesting', () => {
+  const order: string[] = []
+
+  /** Layer 3 — config-less, contributes a plain string. */
+  const withRequestId = defineMiddleware<
+    'requestId',
+    void,
+    Record<never, never>,
+    string
+  >({
+    key: 'requestId',
+    run: () => async (req) => {
+      order.push('requestId')
+      return { requestId: req.headers.get('x-request-id') ?? 'generated' }
+    },
+  })
+
+  /**
+   * Layer 4 — declares prerequisites contributed by layers 2 and 3, so this
+   * only compiles when accumulation actually reached four deep.
+   */
+  const withAudit = defineMiddleware<
+    'audit',
+    { actor: string },
+    { featureFlag: { name: string }; requestId: string },
+    { line: string }
+  >({
+    key: 'audit',
+    run: (config) => async (_req, ctx) => {
+      order.push('audit')
+      return {
+        audit: {
+          line: `${config.actor}:${ctx.featureFlag.name}:${ctx.requestId}`,
+        },
+      }
+    },
+  })
+
+  const app = withCors(
+    { origin: 'https://app.example.com' },
+    withFeatureFlag(
+      { name: 'beta', evaluate: () => ({ enabled: true, variant: 'B' }) },
+      withRequestId(
+        withAudit({ actor: 'svc' }, async (_req, ctx) => {
+          order.push('handler')
+          // All four upstream keys, ambiently typed — no annotation here.
+          const allowedOrigin: string | null = ctx.cors.allowedOrigin
+          const flag: string = ctx.featureFlag.name
+          const variant: string | null = ctx.featureFlag.variant
+          const requestId: string = ctx.requestId
+          const line: string = ctx.audit.line
+          return Response.json({
+            allowedOrigin,
+            flag,
+            variant,
+            requestId,
+            line,
+          })
+        }),
+      ),
+    ),
+  ) satisfies FetchHandler
+
+  it('delivers every upstream contribution to the innermost handler', async () => {
+    order.length = 0
+    const res = await app(
+      new Request('http://localhost/', {
+        headers: {
+          Origin: 'https://app.example.com',
+          'x-request-id': 'req-42',
+        },
+      }),
+    )
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      allowedOrigin: 'https://app.example.com',
+      flag: 'beta',
+      variant: 'B',
+      requestId: 'req-42',
+      line: 'svc:beta:req-42',
+    })
+  })
+
+  it('runs the layers outermost-first and unwinds the response seam last', async () => {
+    order.length = 0
+    const res = await app(
+      new Request('http://localhost/', {
+        headers: { Origin: 'https://app.example.com' },
+      }),
+    )
+
+    expect(order).toEqual(['requestId', 'audit', 'handler'])
+    // The outermost layer (a generator) still stamped the response on the way
+    // out, four layers up from the handler.
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe(
+      'https://app.example.com',
+    )
+  })
+
+  it('short-circuits from the outermost layer without running the inner three', async () => {
+    order.length = 0
+    const preflight = await app(
+      new Request('http://localhost/', {
+        method: 'OPTIONS',
+        headers: {
+          Origin: 'https://app.example.com',
+          'Access-Control-Request-Method': 'POST',
+        },
+      }),
+    )
+
+    expect(preflight.status).toBe(204)
+    expect(order).toEqual([])
   })
 })
 
 // ---------------------------------------------------------------------------
 // Compile-time guarantee tests, verified by `tsc --noEmit` (the `typecheck`
 // script) — a regression is a type error or an unused-directive error. A plain
-// vitest run cannot see these. Ambient accumulation and collision detection both
-// require the `satisfies FetchHandler` anchor on the outermost handler.
+// vitest run cannot see these.
+//
+// The accumulation cases below carry `satisfies FetchHandler`, but ambient
+// accumulation does not depend on it — an unannotated outermost call resolves
+// `Base` to its constraint, the same empty upstream the annotation would seed,
+// and the cascade proceeds inward from there at any depth. Collision detection
+// is the guarantee that does depend on it: the produced handler type records the
+// upstream a stack requires, never the keys it contributes, so unannotated there
+// is nothing for an enclosing call to check its own key against. The annotation
+// is therefore load-bearing in the `collision:` cases and incidental in the
+// `accumulation:` ones.
 // ---------------------------------------------------------------------------
 describe('type guarantees (tsc-verified)', () => {
   it('accumulation: the inner handler sees every upstream key, typed', () => {
@@ -621,6 +757,83 @@ describe('type guarantees (tsc-verified)', () => {
     void _app
   })
 
+  it('accumulation: three levels deep, every upstream key still typed', () => {
+    const withA = passing('alpha', { v: 1 })
+    const withB = passing('beta', { v: 2 })
+    const withC = passing('gamma', { v: 3 })
+
+    const _app = withA(
+      withB(
+        withC(async (_req, ctx) => {
+          const a: number = ctx.alpha.v
+          const b: number = ctx.beta.v
+          const c: number = ctx.gamma.v
+          void a
+          void b
+          void c
+          return Response.json({ ok: true })
+        }),
+      ),
+    ) satisfies FetchHandler
+    void _app
+  })
+
+  it('accumulation: four levels deep, every upstream key still typed', () => {
+    const withA = passing('alpha', { v: 1 })
+    const withB = passing('beta', { v: 2 })
+    const withC = passing('gamma', { v: 3 })
+    const withD = passing('delta', { v: 4 })
+
+    const _app = withA(
+      withB(
+        withC(
+          withD(async (_req, ctx) => {
+            const a: number = ctx.alpha.v
+            const b: number = ctx.beta.v
+            const c: number = ctx.gamma.v
+            const d: number = ctx.delta.v
+            void a
+            void b
+            void c
+            void d
+            return Response.json({ ok: true })
+          }),
+        ),
+      ),
+    ) satisfies FetchHandler
+    void _app
+  })
+
+  it('accumulation: three levels deep with real config-taking middleware', () => {
+    const withStamp = defineMiddleware<
+      'stamp',
+      { at: string },
+      Record<never, never>,
+      { at: string }
+    >({
+      key: 'stamp',
+      run: (config) => async () => ({ stamp: { at: config.at } }),
+    })
+    const withA = passing('alpha', { v: 1 })
+
+    const _app = withFeatureFlag(
+      { name: 'beta', evaluate: () => true },
+      withStamp(
+        { at: 'now' },
+        withA(async (_req, ctx) => {
+          const f: string = ctx.featureFlag.name
+          const s: string = ctx.stamp.at
+          const a: number = ctx.alpha.v
+          void f
+          void s
+          void a
+          return Response.json({ ok: true })
+        }),
+      ),
+    ) satisfies FetchHandler
+    void _app
+  })
+
   it('collision: composing a middleware over an upstream that already has its key fails', () => {
     const withFoo = passing('foo', { v: 1 })
 
@@ -630,7 +843,60 @@ describe('type guarantees (tsc-verified)', () => {
     void _bad
   })
 
-  it('prerequisite: a middleware with `In` keys cannot be a bare fetch entry', () => {
+  // Collision detection resolves `Base` through the same inward cascade as
+  // accumulation, so the adjacent-layer case above does not guard depth 3+. The
+  // positive controls are the accumulation tests above: the same shapes without a
+  // repeated key compile, so what these two expect is the duplicate key.
+  it('collision: a key contributed two layers up is still caught', () => {
+    const withFoo = passing('foo', { v: 1 })
+    const withBar = passing('bar', { v: 2 })
+
+    const _bad =
+      // @ts-expect-error — innermost `withFoo` shadows 'foo' from two layers up
+      withFoo(withBar(withFoo(innerOk))) satisfies FetchHandler
+    void _bad
+  })
+
+  it('collision: a key contributed three layers up is still caught', () => {
+    const withFoo = passing('foo', { v: 1 })
+    const withBar = passing('bar', { v: 2 })
+    const withBaz = passing('baz', { v: 3 })
+
+    const _bad =
+      // @ts-expect-error — innermost `withFoo` shadows 'foo' from three layers up
+      withFoo(withBar(withBaz(withFoo(innerOk)))) satisfies FetchHandler
+    void _bad
+  })
+
+  // `@ts-expect-error` pins that *an* error fires, not which one, and the whole
+  // point of siting the sentinel on the handler parameter is the text. These pin
+  // it directly: on a collision the parameter a call is checked against *is* the
+  // sentinel, so what TypeScript prints is this string.
+  it('collision: the guard resolves to the sentinel string, verbatim', () => {
+    const _msg: NoConflict<'foo', { foo: { v: number } }, never> =
+      "middleware-conflict: key 'foo' is already present on the upstream context"
+    // Mutually assignable with `Conflict<'foo'>`, so the guard cannot quietly
+    // widen to `string` and keep this test passing.
+    const _exact: Conflict<'foo'> = _msg
+    void _exact
+  })
+
+  it('collision: the guard passes the handler through when the key is free', () => {
+    type H = (req: Request, ctx: BaseContext) => Promise<Response>
+    const _passthrough: NoConflict<'foo', { bar: { v: number } }, H> = innerOk
+    void _passthrough
+  })
+
+  it('collision: the guard is skipped for an `any` upstream', () => {
+    type H = (req: Request, ctx: BaseContext) => Promise<Response>
+    // `keyof any` is every key, so without the `IsAny` arm this would report a
+    // collision for any key at all — `vi.fn`-inferred handlers hit this.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const _anyBase: NoConflict<'foo', any, H> = innerOk
+    void _anyBase
+  })
+
+  it('prerequisite: a middleware with `In` keys cannot be the bare `fetch` export', () => {
     const withNeedsAuth = defineMiddleware<
       'authz',
       void,
@@ -642,12 +908,12 @@ describe('type guarantees (tsc-verified)', () => {
     })
 
     const handler = withNeedsAuth(innerOk)
-    // @ts-expect-error — requires upstream jwtClaims; cannot satisfy a bare entry
+    // @ts-expect-error — requires upstream jwtClaims; cannot be the bare `fetch` export
     const _entry: FetchHandler = handler
     void _entry
   })
 
-  it('cross-middleware deps via `In` type with no anchor', () => {
+  it('unannotated: a nested handler reads its own contribution', () => {
     const withStamp = defineMiddleware<
       'stamp',
       void,
@@ -655,8 +921,9 @@ describe('type guarantees (tsc-verified)', () => {
       { at: number }
     >({ key: 'stamp', run: () => async () => ({ stamp: { at: 1 } }) })
 
-    // withFeatureFlag (no prereq) wraps withStamp; the handler reads its own key
-    // with no anchor — cross-middleware deps flow through the `In` constraint.
+    // Neither middleware declares an `In` prerequisite — this pins only that a
+    // nested handler types with no annotation. `In` behaviour is pinned by the
+    // tests below.
     const _app = withFeatureFlag(
       { name: 'beta', evaluate: () => true },
       withStamp(async (_req, ctx) => {
@@ -664,6 +931,130 @@ describe('type guarantees (tsc-verified)', () => {
         void at
         return Response.json({ ok: true })
       }),
+    )
+    void _app
+  })
+
+  // -------------------------------------------------------------------------
+  // Unmet `In` prerequisites travel *outward* — the direction opposite to the
+  // anchored cascade, and the one the propagation overload on `Middleware`
+  // exists to serve. Unanchored there is no accumulated `Base` to push inward,
+  // so each layer that does not contribute the required key republishes it as
+  // its own requirement; the stack only typechecks once some layer contributes
+  // it, or fails wherever the stack is checked against `FetchHandler`.
+  //
+  // Distance between provider and requirer is the axis these pin: the earlier
+  // signature discharged a prerequisite only from the immediately enclosing
+  // layer, so the two-layer case is the regression guard.
+  // -------------------------------------------------------------------------
+  const withNeedsAlpha = defineMiddleware<
+    'needsAlpha',
+    void,
+    { alpha: { v: number } },
+    { ok: true }
+  >({
+    key: 'needsAlpha',
+    run: () => async () => ({ needsAlpha: { ok: true } }),
+  })
+
+  it('prerequisite: unanchored, provider immediately encloses the requirer', () => {
+    const withA = passing('alpha', { v: 1 })
+
+    const _app = withA(withNeedsAlpha(innerOk))
+    void _app
+  })
+
+  it('prerequisite: unanchored, provider two layers up', () => {
+    const withA = passing('alpha', { v: 1 })
+    const withB = passing('beta', { v: 2 })
+
+    // `withB` contributes nothing `withNeedsAlpha` asked for, so it carries the
+    // outstanding `alpha` up to `withA`, which discharges it.
+    const _app = withA(withB(withNeedsAlpha(innerOk)))
+    void _app
+  })
+
+  it('prerequisite: unanchored, provider four layers up', () => {
+    const withA = passing('alpha', { v: 1 })
+    const withB = passing('beta', { v: 2 })
+    const withC = passing('gamma', { v: 3 })
+    const withD = passing('delta', { v: 4 })
+
+    const _app = withA(withB(withC(withD(withNeedsAlpha(innerOk)))))
+    void _app
+  })
+
+  it('prerequisite: annotated, provider two layers up', () => {
+    const withA = passing('alpha', { v: 1 })
+    const withB = passing('beta', { v: 2 })
+
+    // Same stack as above, now also asserted usable as the `fetch` export: the inward cascade
+    // carries `alpha` to the requirer, so it is discharged on the way in rather
+    // than republished outward.
+    const _app = withA(withB(withNeedsAlpha(innerOk))) satisfies FetchHandler
+    void _app
+  })
+
+  it('prerequisite: unanchored, chained through a second requirer', () => {
+    const withA = passing('alpha', { v: 1 })
+    const withB = passing('beta', { v: 2 })
+    const withC = passing('gamma', { v: 3 })
+    const withNeedsNeedsAlpha = defineMiddleware<
+      'downstream',
+      void,
+      { needsAlpha: { ok: true } },
+      { d: number }
+    >({ key: 'downstream', run: () => async () => ({ downstream: { d: 1 } }) })
+
+    // Two prerequisites in flight at once, discharged at different depths:
+    // `needsAlpha` by the layer just outside `withC`, `alpha` three layers up.
+    const _app = withA(
+      withB(withNeedsAlpha(withC(withNeedsNeedsAlpha(innerOk)))),
+    )
+    void _app
+  })
+
+  it('prerequisite: a requirement no layer contributes fails when checked as the `fetch` export', () => {
+    const withB = passing('beta', { v: 2 })
+    const withC = passing('gamma', { v: 3 })
+
+    // Composes — the requirement is still travelling — but never lands, so the
+    // produced stack keeps a required `ctx`. Note what pins the error: the
+    // `FetchHandler` annotation below. The composition itself is fine, and an
+    // untyped `export default { fetch: stack }` would compile and then read
+    // `undefined` off `ctx` at runtime.
+    const stack = withB(withC(withNeedsAlpha(innerOk)))
+    // @ts-expect-error — nothing in the stack contributes `alpha`
+    const _entry: FetchHandler = stack
+    void _entry
+  })
+
+  it('prerequisite: a provider with the wrong contribution type does not discharge it', () => {
+    // `alpha.v` is a string here; `withNeedsAlpha` requires a number. The layer
+    // must not discharge the requirement just because the key names match.
+    const withA = passing('alpha', { v: 'one' })
+    const withB = passing('beta', { v: 2 })
+
+    const _bad =
+      // @ts-expect-error — alpha.v is string, but the prerequisite wants number
+      withA(withB(withNeedsAlpha(innerOk)))
+    void _bad
+  })
+
+  it('prerequisite: the leaf handler still sees an exact ctx inside a travelling stack', () => {
+    const withA = passing('alpha', { v: 1 })
+    const withB = passing('beta', { v: 2 })
+
+    const _app = withA(
+      withB(
+        withNeedsAlpha(async (_req, ctx) => {
+          const ok: true = ctx.needsAlpha.ok
+          void ok
+          // @ts-expect-error — 'nope' was never contributed
+          void ctx.nope
+          return Response.json({ ok: true })
+        }),
+      ),
     )
     void _app
   })

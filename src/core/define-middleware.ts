@@ -34,7 +34,7 @@ function warnUnhonoredThirdArg(): void {
  *
  * `run` is **request-side by default** (the common case): it runs *before* the
  * handler and never observes the handler's `Response`. Response-shaped concerns
- * (CORS, envelopes) normally belong in the handler or a `.then()` on the entry.
+ * (CORS, envelopes) normally belong in the handler or a `.then()` on the stack.
  *
  * **Response seam (escape hatch).** When a middleware genuinely needs to see the
  * way out — stamp headers, time the request, run `finally` cleanup — write `run`
@@ -57,17 +57,32 @@ function warnUnhonoredThirdArg(): void {
  *
  * Typing:
  *
- * - **Prerequisite-free middleware are entry-able.** Their produced handler has
- *   an optional `ctx`, so it satisfies a bare `(req) => Response` fetch entry and
- *   self-seeds a fresh context.
+ * - **Prerequisite-free middleware can be the `fetch` export on their own.**
+ *   Their produced handler has an optional `ctx`, so it satisfies a bare
+ *   `(req) => Response` export and self-seeds a fresh context.
  * - **Middleware with `In` prerequisites require `ctx`.** They can only be nested
- *   inside a wrapper that supplies those keys — never a bare entry — which keeps
- *   the prerequisite from being a type-lie at the top level.
- * - **Collision detection.** Composing where the upstream already has the key
- *   resolves `Base` to a `Conflict<Key>` sentinel; the stack fails to typecheck.
- * - **Accumulation.** Cross-middleware dependencies declared via `In` type with
- *   no ceremony. For the innermost handler to *ambiently* see every upstream key,
- *   annotate the outermost with `satisfies FetchHandler` (a type-only anchor).
+ *   inside a wrapper that supplies those keys — never the bare `fetch` export —
+ *   which keeps the prerequisite from being a type-lie at the top level. The
+ *   supplying wrapper need not be the immediately enclosing one, and no
+ *   annotation is needed: an unmet prerequisite is republished by each layer that
+ *   doesn't contribute it, travelling outward until one does. If none does, the
+ *   stack keeps a required `ctx` and fails wherever it is checked against
+ *   {@link FetchHandler} — but an untyped `export default { fetch: … }` is no
+ *   such check, so annotate the outermost call to catch it at build time.
+ * - **Accumulation needs no annotation.** The innermost handler sees every
+ *   upstream key ambiently at any nesting depth. An unannotated outermost call
+ *   has no contextual return type, so `Base` resolves to its constraint — the
+ *   empty upstream, which is exactly what a `satisfies FetchHandler` would seed
+ *   — and the cascade proceeds inward from there.
+ * - **Collision detection does.** Composing where the upstream already has the
+ *   key resolves the handler parameter to a {@link Conflict} sentinel (see
+ *   {@link NoConflict}) and the stack fails to typecheck — but only under
+ *   `satisfies FetchHandler` on the outermost call. The produced handler type
+ *   records the upstream a stack *requires*, never the keys it *contributes*, so
+ *   an unannotated enclosing call has nothing to check its own key against and a
+ *   duplicate compiles silently. One annotation covers any depth.
+ *   {@link pipeline} has no such gap — it validates from its entries array — so
+ *   a stack that cannot carry the annotation is better written flat.
  *
  * @typeParam Key - The literal-string key contributed to ctx.
  * @typeParam Config - Configuration object the middleware accepts.
@@ -240,24 +255,45 @@ export type IsAny<T> = boolean extends (T extends never ? true : false)
   : false
 
 /**
- * Resolves to a {@link Conflict} sentinel when `Base` already carries `Key`,
- * surfacing the collision at the call site (the sentinel string is not an
- * `object`, so the constraint fails). Exported so a middleware with a bespoke
- * generic signature (e.g. one that adds a `Payload` type parameter) can reuse the
- * core's collision check instead of hand-copying it.
+ * The collision check {@link Middleware} applies: resolves to `Handler` when
+ * `Key` is free on `Base`, and to a {@link Conflict} sentinel when it is not.
+ *
+ * **Site it on the handler parameter, not the `Base` constraint.** TypeScript
+ * substitutes a failed constraint silently but prints a failed parameter
+ * verbatim, so on the parameter the sentinel's text reaches the reader and the
+ * error is reported on the offending call rather than the one enclosing it.
+ * {@link pipeline} has always taken this route (see `Validate`); the
+ * {@link Middleware} overloads are the nesting equivalent.
+ *
+ * Reuse it in a middleware with a bespoke generic signature (e.g. one that adds
+ * a `Payload` type parameter) by wrapping the handler parameter and leaving the
+ * `Base` constraint to `In & BaseContext`:
+ *
+ * ```ts
+ * <Base extends In & BaseContext>(
+ *   handler: NoConflict<Key, Base, (req: Request, ctx: Base & …) => Promise<Response>>,
+ * ): Produced<Base, In>
+ * ```
+ *
+ * Every overload that can accept the handler needs the wrap. One left unguarded
+ * will accept the call the guarded one rejected, resolve its own `Base` to
+ * something unusable, and push the error back out to the enclosing call — which
+ * is the failure mode this type exists to remove.
+ *
+ * @typeParam Handler - The handler type to resolve to when `Key` is free.
  */
-export type NoConflict<Key extends string, Base> =
+export type NoConflict<Key extends string, Base, Handler> =
   IsAny<Base> extends true
-    ? object
+    ? Handler
     : Key extends keyof Base
       ? Conflict<Key>
-      : object
+      : Handler
 
 /**
  * The produced handler shape.
  *
  * - **No prerequisites** (`In` empty): `ctx` is optional, so the handler is
- *   directly usable as a runtime `fetch` entry and self-seeds its context.
+ *   directly usable as the runtime's `fetch` export and self-seeds its context.
  * - **With prerequisites**: `ctx` is required, so the middleware must be nested
  *   inside a wrapper that provides those keys.
  *
@@ -282,13 +318,22 @@ type MiddlewareArgs<Config, Handler> = undefined extends Config
 /**
  * The shape of a middleware produced by {@link defineMiddleware}.
  *
- * Two call signatures:
+ * Three call signatures:
+ * - **Handler (cascade)** — `mw(config, handler)` (or `mw(handler)`) returns the
+ *   produced fetch handler, with `Base` pushed *inward* from the contextual type
+ *   of the call's return. `Base` is constrained to `In & BaseContext` for
+ *   prerequisite enforcement, and the handler parameter is wrapped in
+ *   {@link NoConflict} for collision detection — both surface at the call site.
+ * - **Handler (propagation)** — the same call when the wrapped handler declares
+ *   prerequisites this layer cannot meet from the inward push alone. `Ctx` is
+ *   read *outward* off that handler and re-published as this layer's own
+ *   requirement, minus the key it contributes.
  * - **Config-only** — `mw(config)` (or `mw()` for config-less) returns an
  *   {@link Entry} for use in a {@link pipeline} array.
- * - **Handler** — `mw(config, handler)` (or `mw(handler)`) returns the produced
- *   fetch handler directly, with `Base` inferred from the handler's `ctx` type.
- *   `Base` is constrained to `In & BaseContext & NoConflict<Key, Base>` so both
- *   prerequisite enforcement and collision detection surface at the call site.
+ *
+ * The two directions cannot share one signature: the cascade needs the handler
+ * argument to be a dead inference site, and the propagation needs it to be the
+ * live one. Splitting them into ordered overloads lets each keep what it needs.
  */
 export interface Middleware<
   Key extends string,
@@ -296,19 +341,75 @@ export interface Middleware<
   In extends object,
   Contribution,
 > {
-  // Handler call — listed first so TypeScript's bidirectional generic inference
-  // works correctly for nested calls (`withA(withB(handler))`). This is the
-  // same signature as the original type alias, so accumulation and collision
-  // detection are preserved unchanged.
-  <Base extends In & BaseContext & NoConflict<Key, Base>>(
+  // Handler call, cascade form — listed first so TypeScript's bidirectional
+  // generic inference works correctly for nested calls (`withA(withB(handler))`),
+  // and so this form, not the propagation overload below, is the one that types
+  // an implicitly-typed arrow handler. Overload order is the tie-break: an arrow
+  // matches both, and only this one contextually types its `ctx`.
+  //
+  // `NoInfer<Base>` on the handler's `ctx` is what makes accumulation survive
+  // past two layers. `Base` flows *inward*, from the contextual type of this
+  // call's return — a `satisfies FetchHandler` where there is one, and otherwise
+  // `Base`'s own constraint, the empty upstream, which is the same starting
+  // point — so each layer's `ctx` is the accumulated upstream plus its own key.
+  // That fallback is why accumulation needs no annotation at any depth. Left
+  // inferable, `ctx` is a second inference site — and at depth >= 2 the handler
+  // argument is itself a middleware call whose type supplies a candidate there,
+  // which outranks the contextual return type and collapses `Base` to its
+  // constraint (the empty upstream). The cascade then stops: the innermost
+  // handler sees only its own key and the stack fails to compile. Blocking
+  // inference at that site leaves the return type as the single source of
+  // `Base`, so the push chains through any nesting depth.
+  //
+  // `NoInfer` is a TypeScript 5.4 intrinsic and it is emitted into the published
+  // `.d.ts`, so it sets the consumer TypeScript floor (documented under
+  // Requirements in the root README). Replacing it means replacing that floor.
+  <Base extends In & BaseContext>(
     ...args: MiddlewareArgs<
       Config,
-      (
-        req: Request,
-        ctx: Base & { [K in Key]: Contribution },
-      ) => Promise<Response>
+      NoConflict<
+        Key,
+        Base,
+        (
+          req: Request,
+          ctx: NoInfer<Base> & { [K in Key]: Contribution },
+        ) => Promise<Response>
+      >
     >
   ): Produced<Base, In>
+  // Handler call, propagation form — reached only when the cascade overload
+  // above fails, which is exactly the unanchored-prerequisite case.
+  //
+  // An `In` prerequisite is discharged by whichever layer contributes the key.
+  // With an anchor that happens on the way in: `Base` carries the accumulated
+  // upstream down to the requirer, so the cascade overload already satisfies it
+  // at any depth. Unanchored there is nothing to carry — `Base` collapses to its
+  // constraint, the empty upstream — so the requirement has to travel the other
+  // way, *outward*, one layer at a time until some layer contributes the key.
+  //
+  // That outward travel is inference off the handler argument, the very site
+  // `NoInfer` closes above; the two readings of that argument are mutually
+  // exclusive within one signature. Hence the split. Here `Ctx` is the wrapped
+  // handler's declared `ctx` — its unmet requirement — and the produced type
+  // republishes `Omit<Ctx, Key>`: everything still outstanding once this layer's
+  // own contribution is accounted for. `Produced`'s second argument gets it too,
+  // so a stack with an outstanding requirement has a *required* `ctx` and cannot
+  // pass as a bare `FetchHandler` export.
+  //
+  // `Ctx extends { [K in Key]?: Contribution }` is what keeps `Omit` honest.
+  // Omitting by key name alone would discharge `{ alpha: { v: number } }` against
+  // a layer contributing `alpha: { v: string }`. The optional-key constraint
+  // makes the requirement's type checked against `Contribution` where the key is
+  // present, and is vacuous where it isn't.
+  <
+    Base extends In & BaseContext,
+    Ctx extends BaseContext & { [K in Key]?: Contribution } = BaseContext,
+  >(
+    ...args: MiddlewareArgs<
+      Config,
+      NoConflict<Key, Base, (req: Request, ctx: Ctx) => Promise<Response>>
+    >
+  ): Produced<Base & Omit<Ctx, Key>, In & Omit<Ctx, Key>>
   // Config-only call — `mw(config)` (or `mw()` for config-less) returns an
   // Entry for use in a `pipeline` array. Falls through from the handler overload
   // because config-only calls either have the wrong arity (required-config mw)

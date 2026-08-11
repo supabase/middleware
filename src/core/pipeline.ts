@@ -11,7 +11,7 @@
  * ```
  *
  * At runtime `pipeline` folds the array back into the same nested calls, so
- * behavior is identical to hand-nesting. The type-level benefits over nesting:
+ * behavior is identical to nested handlers. The type-level benefits over nesting:
  * `ctx` is accumulated across the array (no manual annotation), and duplicate
  * keys / out-of-order prerequisites fail to compile with a descriptive message.
  *
@@ -65,7 +65,7 @@ type Validate<Entries extends readonly unknown[], Ctx = BaseContext> =
  * the **handler** argument so they don't break tuple inference on `entries`.
  *
  * Under the hood, `pipeline` folds the array into the same nested calls as
- * hand-nesting — there is no new runtime behavior.
+ * nested handlers — there is no new runtime behavior.
  *
  * @example
  * ```ts
