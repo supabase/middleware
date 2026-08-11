@@ -28,7 +28,10 @@ export default {
   fetch: pipeline(
     [
       withCors({}),
-      withFeatureFlag({ name: 'beta', evaluate: (req) => req.headers.has('x-beta') }),
+      withFeatureFlag({
+        name: 'beta',
+        evaluate: (req) => req.headers.has('x-beta'),
+      }),
     ],
     async (req, ctx) => Response.json({ flag: ctx.featureFlag.name }),
   ),
@@ -125,18 +128,18 @@ export default {
 
 ## API
 
-| Export                                      | Description                                                                                   |
-| ------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `pipeline(entries, handler)`                | Compose a flat array of entries around a handler. Returns a `FetchHandler`.                   |
-| `Entry<Key, In, Contribution>`              | Type produced by `mw(config)`. Carries phantom types for `pipeline`'s accumulation.           |
-| `defineMiddleware(spec)`                    | Author helper: declare a middleware. Returns a `(config, handler)` callable.                  |
+| Export                                      | Description                                                                                                                                                                                                                                                 |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pipeline(entries, handler)`                | Compose a flat array of entries around a handler. Returns a `FetchHandler`.                                                                                                                                                                                 |
+| `Entry<Key, In, Contribution>`              | Type produced by `mw(config)`. Carries phantom types for `pipeline`'s accumulation.                                                                                                                                                                         |
+| `defineMiddleware(spec)`                    | Author helper: declare a middleware. Returns a `(config, handler)` callable.                                                                                                                                                                                |
 | `FetchHandler`                              | The type of a stack handed to the host (the `fetch` export, `Deno.serve(app)`, …). Required for collision detection in nested handlers; also rejects a stack whose `In` prerequisite nobody supplied. Prerequisites between layers are enforced without it. |
-| `Conflict<Key>`                             | Sentinel string the handler parameter resolves to when a middleware would shadow an upstream key. |
-| `NoConflict<Key, Base, Handler>`            | The collision check `Middleware` applies — `Handler` when `Key` is free on `Base`, the sentinel when it isn't. |
-| `Middleware<Key, Config, In, Contribution>` | The shape of a middleware produced by `defineMiddleware`.                                     |
-| `getEnv(key)` / `runtimeName`               | Portable environment access (platform env first, host env fallback) and the std-env host name. |
-| `seedContext(platformArg?)`                 | Mint a marked base context — for hosts embedding the engine (e.g. `@supabase/server`).        |
-| `RuntimeName` / `BaseContext`               | The std-env host-name union and the base context type.                                        |
+| `Conflict<Key>`                             | Sentinel string the handler parameter resolves to when a middleware would shadow an upstream key.                                                                                                                                                           |
+| `NoConflict<Key, Base, Handler>`            | The collision check `Middleware` applies — `Handler` when `Key` is free on `Base`, the sentinel when it isn't.                                                                                                                                              |
+| `Middleware<Key, Config, In, Contribution>` | The shape of a middleware produced by `defineMiddleware`.                                                                                                                                                                                                   |
+| `getEnv(key)` / `runtimeName`               | Portable environment access (platform env first, host env fallback) and the std-env host name.                                                                                                                                                              |
+| `seedContext(platformArg?)`                 | Mint a marked base context — for hosts embedding the engine (e.g. `@supabase/server`).                                                                                                                                                                      |
+| `RuntimeName` / `BaseContext`               | The std-env host-name union and the base context type.                                                                                                                                                                                                      |
 
 ## See also
 

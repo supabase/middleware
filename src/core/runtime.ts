@@ -76,7 +76,9 @@ export function getEnv(key: string): string | undefined {
   const fromStd = stdEnv[key]
   if (fromStd !== undefined) return fromStd
   if (isDeno) {
-    const deno = (globalThis as { Deno?: { env?: { get(k: string): string | undefined } } }).Deno
+    const deno = (
+      globalThis as { Deno?: { env?: { get(k: string): string | undefined } } }
+    ).Deno
     return deno?.env?.get(key)
   }
   return undefined

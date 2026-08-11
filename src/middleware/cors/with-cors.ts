@@ -159,7 +159,12 @@ export const withCors: Middleware<
   WithCorsConfig,
   Record<never, never>,
   CorsContribution
-> = defineMiddleware<'cors', WithCorsConfig, Record<never, never>, CorsContribution>({
+> = defineMiddleware<
+  'cors',
+  WithCorsConfig,
+  Record<never, never>,
+  CorsContribution
+>({
   key: 'cors',
   // A generator so it can act on both sides of the handler: preflight before
   // `yield`, header stamping after.

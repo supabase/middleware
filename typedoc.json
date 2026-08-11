@@ -22,7 +22,14 @@
     "src/middleware/cors/README.md",
     "src/middleware/feature-flag/README.md"
   ],
-  "highlightLanguages": ["typescript", "javascript", "bash", "sh", "json", "yaml"],
+  "highlightLanguages": [
+    "typescript",
+    "javascript",
+    "bash",
+    "sh",
+    "json",
+    "yaml"
+  ],
   "sort": ["source-order"],
   "kindSortOrder": ["Function", "Class", "Interface", "TypeAlias", "Enum"],
   "categorizeByGroup": true

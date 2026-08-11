@@ -137,8 +137,13 @@ export function defineMiddleware<
     // can be passed to `pipeline` directly: `pipeline([withFoo(cfg)], handler)`.
     if (args.length === 0 || typeof lastArg !== 'function') {
       const config = (args.length > 0 ? args[0] : undefined) as Config
-      const wrap = (handler: (req: Request, ctx: object) => Promise<Response>) =>
-        callable(config, handler) as unknown as (req: Request, ctx: object) => Promise<Response>
+      const wrap = (
+        handler: (req: Request, ctx: object) => Promise<Response>,
+      ) =>
+        callable(config, handler) as unknown as (
+          req: Request,
+          ctx: object,
+        ) => Promise<Response>
       return wrap as Entry<Key, In, Contribution>
     }
 
