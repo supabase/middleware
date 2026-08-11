@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.0](https://github.com/supabase/middleware/compare/middleware-v0.2.0...middleware-v0.3.0) (2026-08-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* NoConflict takes a required third type parameter, the handler type to resolve to when the key is free. `NoConflict<Key, Base>` now fails on arity; pass the handler type third and leave the `Base` constraint as `In & BaseContext`. Constraint-position siting is no longer supported.
+
+### Bug Fixes
+
+* `satisfies FetchHandler` fails typecheck in consumer handlers if nesting depth &gt;2 ([#21](https://github.com/supabase/middleware/issues/21)) ([9a44e9d](https://github.com/supabase/middleware/commit/9a44e9db7065100a2c8cdc0da82ef7a2823fca8b))
+
 ## [0.2.0](https://github.com/supabase/middleware/compare/middleware-v0.1.0...middleware-v0.2.0) (2026-08-06)
 
 
