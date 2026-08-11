@@ -7,7 +7,7 @@
 
 Composable, type-safe middleware for Web Fetch handlers.
 
-> **Status: public alpha (0.1).** The core engine and API are still settling — expect breaking changes before a stable 1.0. Follow [releases](https://github.com/supabase/middleware/releases) for changes.
+> **Status: public alpha.** The core engine and API are still settling — expect breaking changes before a stable 1.0. The badge above tracks the current release; follow [releases](https://github.com/supabase/middleware/releases) for changes.
 
 A **middleware** is a `withFoo` function. Call it with just the config — `withFoo(config)` — to get an **`Entry`**: a typed placeholder that carries the middleware's key, prerequisites, and contribution as phantom types. Pass a flat array of entries to `pipeline` with a final handler; `pipeline` folds the array into nested calls at runtime and every entry's contribution lands on `ctx` in order. No registry, no `app.use()`, no nesting.
 
