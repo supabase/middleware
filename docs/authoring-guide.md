@@ -47,8 +47,9 @@ export default {
 ```
 
 Nesting costs you the flat reading order past two or three entries, and it
-**requires** the `satisfies FetchHandler` anchor — without it the handler does
-not see upstream keys ambiently, and a duplicate key compiles silently. What it
+wants the `satisfies FetchHandler` anchor on the outermost call: `ctx`
+accumulates without it, but a duplicate key compiles silently and a
+prerequisite nothing supplies isn't caught until the first request. What it
 buys you is that `FetchHandler` is a _type_, so a consumer composing only
 third-party middleware needs no runtime import from `@supabase/middleware` at
 all — which is exactly why §2 re-exports the type from your own package.
@@ -475,7 +476,7 @@ the `Response`.
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@supabase/middleware": "^0.1.0"
+    "@supabase/middleware": "^0.3.0"
   },
   "devDependencies": {
     "tsdown": "^0.20.3",
@@ -539,8 +540,9 @@ with no anchor anywhere. `pipeline` already returns `FetchHandler`, so the
 `satisfies FetchHandler` above is type-only documentation of the export shape.
 
 Where it does carry weight is the **hand-nested** form — `withCors({}, withFeatureFlag({…}, handler))`
-— composed without `pipeline`. There the anchor is what turns on ambient
-accumulation and collision detection, which is why §3's test uses it.
+— composed without `pipeline`. There the anchor turns on collision detection
+and asserts the stack can be the `fetch` export. Accumulation is ambient either
+way. That is why §3's test uses it.
 
 ## Variant: requiring an upstream key
 
@@ -617,8 +619,11 @@ Reverse those two entries and compilation fails with
 
 A middleware with prerequisites also cannot stand alone as a `fetch` entry. You
 can still construct it, but its `ctx` is required rather than optional, so
-`satisfies FetchHandler` fails and calling it with a request alone is an
-arity error. The prerequisite can never become a lie at the top level.
+`satisfies FetchHandler` fails, and calling it with a request alone fails to
+compile: it needs the context argument too. Anywhere the stack is checked
+against `FetchHandler`, the prerequisite cannot become a lie at the top level.
+An untyped `export default { fetch: … }` is no such check, which is why the
+anchor matters.
 
 ## Variant: the response seam
 

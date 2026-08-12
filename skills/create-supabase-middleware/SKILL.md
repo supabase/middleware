@@ -19,6 +19,6 @@ Then pick the target by reading the nearest `package.json`:
 
 Both paths use the same `defineMiddleware` primitive; the difference is only whose package it lives in and whether a subpath export has to be wired up.
 
-**Read the guide before writing code, and follow its `## Rules` section** — eight MUST/NEVER items covering one-key-per-middleware, `getEnv` over `process.env`/`Deno.env`, declaring prerequisites in `In`, `yield`ing at most once, and returning a `Response` to short-circuit rather than throwing. Its code blocks are complete files: write them to disk as given rather than adapting them from memory.
+**Read the guide before writing code, and follow its `## Rules` section** — eight MUST/NEVER items covering one-key-per-middleware, `getEnv` over `process.env`/`Deno.env`, declaring prerequisites in `In`, `yield`ing at most once, and returning a `Response` to short-circuit rather than throwing. Its code blocks labeled with a path are complete files: write them to disk as given rather than adapting them from memory. Unlabeled blocks are fragments that elide with `{ ... }`. Never write those verbatim.
 
 Paths are repo-relative. When `@supabase/middleware` is installed as a dependency, prefix them with `node_modules/@supabase/middleware/`.

@@ -6,6 +6,7 @@ Everything is plain Web Fetch, so the same stack runs unchanged across every run
 
 The package root exports:
 
+- **`pipeline` / `Entry`** — flat-array composition for _consumers_: `withFoo(config)` returns an `Entry`, and `pipeline(entries, handler)` folds the array into the nested calls described above. See the quick start below.
 - **`defineMiddleware`** — for _authors_ writing a new middleware. See the [authoring guide](../../docs/authoring-guide.md).
 - **`Middleware`** — the type a `defineMiddleware` call produces.
 - **`getEnv` / `runtimeName`** — portable environment access and the std-env-detected host name.
@@ -51,10 +52,10 @@ Inside a wrapped handler, `ctx` is a flat intersection of middleware contributio
 | `ctx.<key>` (e.g. `ctx.featureFlag`) | the corresponding middleware | read-only by convention |
 
 > **Reading the body.** Read it off **`req`** as usual — `req.text()` / `req.json()` /
-> `req.arrayBuffer()` / `req.bytes()`. The framework hands every layer a buffered
+> `req.arrayBuffer()` / `req.bytes()` / `req.blob()` / `req.formData()`. The framework hands every layer a buffered
 > request that caches the body after the first read, so a body-verifying middleware
 > (e.g. a webhook signature check) and your handler can both read it without "Body already consumed".
-> (Reading the raw `req.body` stream or `req.formData()` still consumes once.)
+> (Reading the raw `req.body` stream still consumes once: it bypasses the cache.)
 
 Two type-level guarantees:
 
