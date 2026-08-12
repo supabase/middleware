@@ -42,6 +42,8 @@ export default {
 
 `withFoo(config)` returns an **`Entry`**. `pipeline` folds a flat array of entries around a handler and returns the `fetch` handler itself — first in the array runs first on the request. Each entry contributes one typed key to `ctx`, and the handler sees every upstream key, typed.
 
+`withFoo(config, handler)` skips `pipeline`: middleware nest directly and produce the same stack. Anchor the outermost call with `satisfies FetchHandler`. The anchor turns on collision detection and the build-time prerequisite check. A file that composes only middleware from other packages needs no import from `@supabase/middleware`, because those packages re-export the type. Both forms are correct. Do not rewrite one into the other unasked.
+
 **No registry, no `app.use()`, no `next()`.** If you are writing any of those, you are using the wrong model — read `src/core/README.md` before continuing.
 
 ## Read before writing code
