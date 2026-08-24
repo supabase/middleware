@@ -58,11 +58,11 @@ deno add jsr:@supabase/middleware
 
 ## What's in the box
 
-| Import                              | What it does                                                                                                                                      |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@supabase/middleware`              | `pipeline`, `defineMiddleware`, `getEnv`, `runtimeName`, `seedContext`, and the core types: `Entry`, `FetchHandler`, `Middleware`, `BaseContext`. |
-| `@supabase/middleware/feature-flag` | Provider-agnostic feature flag — admit or short-circuit per request.                                                                              |
-| `@supabase/middleware/cors`         | CORS — answers preflight and stamps response headers (the worked example of the response seam).                                                   |
+| Import                              | What it does                                                                                                                                                   |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@supabase/middleware`              | `pipeline`, `defineMiddleware`, `getEnv`, `runtimeName`, `seedContext`, `isContext`, and the core types: `Entry`, `FetchHandler`, `Middleware`, `BaseContext`. |
+| `@supabase/middleware/feature-flag` | Provider-agnostic feature flag — admit or short-circuit per request.                                                                                           |
+| `@supabase/middleware/cors`         | CORS — answers preflight and stamps response headers (the worked example of the response seam).                                                                |
 
 ## How it composes
 
