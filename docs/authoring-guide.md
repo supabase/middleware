@@ -456,6 +456,9 @@ the `Response`.
 
 ## 4. The package
 
+Two files, and they have to agree. `package.json` advertises where the built
+entrypoint lives; `tsdown.config.ts` decides where the build actually puts it.
+
 ```json
 {
   "name": "@acme/middleware-validated-body",
@@ -485,6 +488,29 @@ the `Response`.
   }
 }
 ```
+
+```ts
+// tsdown.config.ts
+import { defineConfig } from 'tsdown'
+
+export default defineConfig({
+  entry: ['src/index.ts'],
+  format: ['esm'],
+  dts: true,
+  // Emit `dist/index.js` and `dist/index.d.ts` rather than `.mjs` and
+  // `.d.mts`. tsdown defaults `fixedExtension` to `true` on the node platform,
+  // which emits the dotted-m names — and the `exports` block above names the
+  // plain ones. `"type": "module"` already marks the package as ESM, so a
+  // plain `.js` extension is unambiguous.
+  fixedExtension: false,
+})
+```
+
+**Do not skip that config.** Without it, nothing complains: the build reports
+success, `pnpm test` passes because vitest resolves through source, and
+`pnpm typecheck` passes too — while `exports` points at two files that were
+never emitted. The package is broken only from the outside, and the first
+consumer to `import` it is the one who finds out.
 
 **Depend on `@supabase/middleware` normally — it does not need to be a peer
 dependency.** Contexts are marked with a `Symbol.for` key from the global symbol
