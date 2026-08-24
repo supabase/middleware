@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/supabase/middleware/compare/middleware-v0.3.0...middleware-v0.3.1) (2026-08-24)
+
+
+### Bug Fixes
+
+* export isContext so hosts can guard seedContext ([#28](https://github.com/supabase/middleware/issues/28)) ([7e1f795](https://github.com/supabase/middleware/commit/7e1f7952fb89485353461b56d791a8fc1cd117c5))
+
 ## [0.3.0](https://github.com/supabase/middleware/compare/middleware-v0.2.0...middleware-v0.3.0) (2026-08-11)
 
 
