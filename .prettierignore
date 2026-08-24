@@ -6,3 +6,5 @@ test/ts-floor/pnpm-lock.yaml
 # Generated and owned by release-please. Reformatting it here would fight the
 # release automation, which appends in its own style on every release.
 CHANGELOG.md
+# Same: release-please's JSON updater reserializes it on every version bump.
+jsr.json
