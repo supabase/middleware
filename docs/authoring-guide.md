@@ -1004,6 +1004,143 @@ against `FetchHandler`, the prerequisite cannot become a lie at the top level.
 An untyped `export default { fetch: … }` is no such check, which is why the
 anchor matters.
 
+## Variant: a config callback that reads upstream context
+
+Some middleware take a **callback** in their configuration rather than only
+plain values — a function called per request to derive something from the
+request and the accumulated context. It is a useful shape, and it has one
+wrinkle worth understanding before you publish it.
+
+`Middleware<Key, Config, In, Contribution>` has no generic for the accumulated
+upstream: `Base` appears only in the handler position. A config callback typed
+through `defineMiddleware` can therefore see the keys you declared in `In`, and
+nothing else. To let it see whatever the consumer composed upstream, thread a
+`Base` parameter through the config type:
+
+```ts
+export interface WithRequestLogConfig<Base extends BaseContext = BaseContext> {
+  log: (line: Record<string, unknown>) => void
+  /** Extra fields, read off the request and the accumulated upstream context. */
+  fields?: (req: Request, ctx: Base) => Record<string, unknown>
+}
+```
+
+and publish a hand-written signature over the ordinary `defineMiddleware`
+runtime — the pattern the
+[`NoConflict` docblock](../src/core/define-middleware.ts) sanctions. Writing
+that overload set correctly is its own topic; what matters here is what your
+consumers then see, because the two composition forms are not equivalent.
+
+**Nesting types it automatically.** There is nothing to annotate:
+
+```ts
+withValidatedBody(
+  { validate: () => true },
+  withRequestLog(
+    { log, fields: (_r, ctx) => ({ body: ctx.validatedBody.data }) },
+    async (_req, ctx) => Response.json({ logged: ctx.requestLog.logged }),
+  ),
+) satisfies FetchHandler
+```
+
+**The `pipeline` form needs one inline annotation** on the callback's `ctx`:
+
+```ts
+pipeline(
+  [
+    withValidatedBody({ validate: () => true }),
+    withRequestLog({
+      log,
+      fields: (_r, ctx: { validatedBody: ValidatedBodyContribution }) => ({
+        body: ctx.validatedBody.data,
+      }),
+    }),
+  ],
+  async (_req, ctx) => Response.json({ logged: ctx.requestLog.logged }),
+)
+```
+
+Without it, `ctx` is the empty upstream:
+
+```
+Property 'validatedBody' does not exist on type 'object'
+```
+
+**That is evaluation order, not a defect.** `withRequestLog(config)` is a
+complete expression, checked before `pipeline` ever sees the array, so position
+cannot flow backwards into an argument already checked. `Entry` carries no
+accumulated-context parameter, and adding one would not help — the config object
+was checked at the inner call site. The only shape that would fix it is
+`pipeline` taking unapplied pairs, `[withRequestLog, config]`, which is a large
+API change for a small gain. Document the annotation; do not redesign around it.
+
+### The annotation is an assertion, not a contract
+
+This is the part to be careful about, and the reason the annotation deserves
+more than a footnote. **Nothing checks it.** Compose the same entry with no
+contributor for the key it names and it still compiles:
+
+```ts
+pipeline(
+  [
+    // withValidatedBody omitted — nothing supplies `validatedBody`
+    withRequestLog({
+      log,
+      fields: (_r, ctx: { validatedBody: ValidatedBodyContribution }) => ({
+        body: ctx.validatedBody.data,
+      }),
+    }),
+  ],
+  handler,
+) satisfies FetchHandler // tsc exits 0
+```
+
+At runtime that throws `TypeError: Cannot read properties of undefined`. Written
+with optional chaining instead it does something worse — it silently produces a
+fallback value for every request and looks like working code.
+
+`pipeline` is not the weak link here. It enforces declared prerequisites and
+detects key collisions. The gap is that a config-callback annotation is a
+_different_ channel, and only one of the two is checked:
+
+| Channel                            | Enforced by `pipeline`?                                                      |
+| ---------------------------------- | ---------------------------------------------------------------------------- |
+| `In` (a declared prerequisite)     | **Yes** — `middleware-prereq: key 'validatedBody' is not yet on the context` |
+| A config-callback param annotation | **No** — it asserts a shape; nothing verifies anyone supplies it             |
+
+So the two composition forms differ in safety, not only in ergonomics. Nesting
+catches a missing upstream precisely _because_ you write no annotation there —
+the same code without a contributor above it fails with
+`Property 'validatedBody' does not exist on type 'object'`.
+
+Two rules follow:
+
+1. **If your middleware requires the key, declare it in `In`.** Then the engine
+   enforces it in both forms and names the missing key. Reach for a
+   config-callback annotation only for context your middleware genuinely works
+   without.
+2. **If it optionally reads upstream context, annotate the key as optional** and
+   handle its absence. That is the honest assertion, and it puts the compiler
+   back in the loop — it will not let the callback assume a key nothing
+   supplies:
+
+```ts
+const fields = (
+  _r: Request,
+  ctx: { validatedBody?: ValidatedBodyContribution },
+) => ({ body: ctx.validatedBody?.data ?? null })
+```
+
+Both pipelines then compile, and neither can crash — with the contributor
+present the field is populated, without it the fallback is deliberate rather
+than accidental. Put the annotated form in your middleware's own `@example`
+TSDoc, so the shape consumers copy is the safe one.
+
+Nothing else about the `pipeline` form is affected. Composition, ordering,
+prerequisites and handler typing all work at full fidelity with nothing
+annotated — the handler's `ctx` above sees both keys either way — and a config
+callback that does not read upstream context needs no annotation in either form.
+
 ## Variant: the response seam
 
 When a concern is genuinely two-sided, write `run` as an `async function*`.
