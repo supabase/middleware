@@ -15,6 +15,7 @@ describe('public API surface', () => {
     expect(Object.keys(root).sort()).toEqual([
       'defineMiddleware',
       'getEnv',
+      'isContext',
       'pipeline',
       'runtimeName',
       'seedContext',
@@ -25,6 +26,7 @@ describe('public API surface', () => {
     expect(Object.keys(core).sort()).toEqual([
       'defineMiddleware',
       'getEnv',
+      'isContext',
       'pipeline',
       'runtimeName',
       'seedContext',

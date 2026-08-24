@@ -162,6 +162,11 @@ export function seedContext(platformArg?: unknown): BaseContext {
  * puts in the same positional slot). The symbol marker set by {@link seedContext}
  * flows by reference through every `{ ...upstream }` merge (spread copies
  * enumerable own symbols), so checking for it is reliable across the stack.
+ *
+ * Public so a host embedding the engine (e.g. `@supabase/server`) can make the
+ * same distinction before calling {@link seedContext}: reseeding with an
+ * upstream context would stash it as the platform env, clobbering the real
+ * bindings captured earlier.
  */
 export function isContext(value: unknown): value is BaseContext {
   return !!value && typeof value === 'object' && CONTEXT_MARK in value
