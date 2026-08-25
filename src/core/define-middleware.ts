@@ -267,7 +267,7 @@ export type IsAny<T> = boolean extends (T extends never ? true : false)
  * substitutes a failed constraint silently but prints a failed parameter
  * verbatim, so on the parameter the sentinel's text reaches the reader and the
  * error is reported on the offending call rather than the one enclosing it.
- * {@link pipeline} has always taken this route (see `Validate`); the
+ * {@link pipeline} has always taken this route (see `ValidateEntries`); the
  * {@link Middleware} overloads are the nesting equivalent.
  *
  * Reuse it in a middleware with a bespoke generic signature (e.g. one that adds

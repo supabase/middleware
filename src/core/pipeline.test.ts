@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { defineMiddleware } from './define-middleware.js'
 import type { FetchHandler } from './runtime.js'
 import { pipeline } from './pipeline.js'
+import type { Entry, ValidateEntries } from '../index.js'
 
 const innerOk = async () => Response.json({ ok: true })
 
@@ -161,7 +162,7 @@ describe('type guarantees (tsc-verified)', () => {
 
     const _bad = pipeline(
       [withFoo(), withFoo()],
-      // @ts-expect-error — duplicate key 'foo': Validate fires Conflict<'foo'>
+      // @ts-expect-error — duplicate key 'foo': ValidateEntries fires Conflict<'foo'>
       async () => Response.json({ ok: true }),
     )
     void _bad
@@ -197,5 +198,34 @@ describe('type guarantees (tsc-verified)', () => {
       handler as (req: Request, ...a: unknown[]) => Promise<Response>
     )(new Request('http://localhost/'), { SECRET: 's' })
     expect(await res.json()).toEqual({ keys: ['a'] })
+  })
+})
+
+describe('ValidateEntries (exported, tsc-verified)', () => {
+  type NeedsAuthEntry = Entry<
+    'profile',
+    { auth: { userId: string } },
+    { displayName: string }
+  >
+
+  it('resolves to true when the seed satisfies the prerequisite', () => {
+    const _ok: ValidateEntries<[NeedsAuthEntry], { auth: { userId: string } }> =
+      true
+    void _ok
+  })
+
+  it('reports a missing prerequisite against the default seed', () => {
+    // @ts-expect-error — prereq 'auth' is not on the default BaseContext seed
+    const _bad: ValidateEntries<[NeedsAuthEntry]> = true
+    void _bad
+  })
+
+  it('reports a conflict when the seed already carries the entry key', () => {
+    // @ts-expect-error — Conflict<'profile'>: key already on the seed
+    const _bad: ValidateEntries<
+      [NeedsAuthEntry],
+      { auth: { userId: string }; profile: { displayName: string } }
+    > = true
+    void _bad
   })
 })

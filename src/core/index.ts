@@ -18,6 +18,7 @@
 export { defineMiddleware } from './define-middleware.js'
 export type { IsAny, Middleware, NoConflict } from './define-middleware.js'
 export { pipeline } from './pipeline.js'
+export type { ValidateEntries } from './pipeline.js'
 export { getEnv, isContext, runtimeName, seedContext } from './runtime.js'
 export type {
   BaseContext,
