@@ -1,6 +1,6 @@
 {
   "name": "@supabase/middleware",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Composable, type-safe middleware for Web Fetch handlers. A middleware is a (config, handler) wrapper that runs against the inbound Request, contributes a typed key to ctx, and either short-circuits or falls through — the same shape across every runtime and framework.",
   "keywords": [
     "middleware",
