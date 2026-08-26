@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/supabase/middleware/compare/middleware-v0.3.1...middleware-v0.4.0) (2026-08-26)
+
+
+### Features
+
+* export ValidateEntries for composing wrappers ([#31](https://github.com/supabase/middleware/issues/31)) ([f938189](https://github.com/supabase/middleware/commit/f938189bef83a0ae804666ccb6fbac97c6e1b7b2))
+
 ## [0.3.1](https://github.com/supabase/middleware/compare/middleware-v0.3.0...middleware-v0.3.1) (2026-08-24)
 
 
