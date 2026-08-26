@@ -7,7 +7,7 @@
 /**
  * Sentinel type used to surface a key collision with the upstream context as a
  * TypeScript error at the call site. Both composition paths put it in the
- * *handler parameter* position — `pipeline` via `Validate`, nesting via
+ * *handler parameter* position — `pipeline` via `ValidateEntries`, nesting via
  * `NoConflict` — because that is the position TypeScript prints:
  *
  * ```

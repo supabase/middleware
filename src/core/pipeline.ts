@@ -39,15 +39,27 @@ type Accumulate<
   : Ctx
 
 /**
- * Validate a tuple of entries in order: each entry's prerequisites must be
- * present on the accumulated context, and its key must not already be there.
- * Returns `true` when the whole chain is valid, or a descriptive error string
- * naming the offending key.
+ * Validate a tuple of entries in order against a seed context. Each entry's
+ * prerequisites (`In`) must be present on the context accumulated so far, and
+ * its key must not already be there. Resolves to `true` when the whole chain
+ * is valid, or to a descriptive error-string type naming the offending key.
  *
- * Applied to the **handler** parameter (not `entries`), so it never disrupts
- * `const Entries` tuple inference.
+ * {@link pipeline} applies it seeded with {@link BaseContext}. A composing
+ * wrapper that puts its own keys on the context before the entries run should
+ * seed it with that context instead. Entries can then declare prerequisites on
+ * the wrapper's keys, and a collision with one of them fails to compile.
+ *
+ * Site it on the **handler** parameter, never on the entries tuple, so it does
+ * not disrupt `const Entries` tuple inference. {@link Conflict} documents why
+ * the parameter position is the one TypeScript prints:
+ *
+ * ```ts
+ * handler: [ValidateEntries<Entries, Seed>] extends [true]
+ *   ? (req: Request, ctx: Accumulated) => Promise<Response>
+ *   : ValidateEntries<Entries, Seed>
+ * ```
  */
-type Validate<
+export type ValidateEntries<
   Entries extends readonly unknown[],
   Ctx = BaseContext,
 > = Entries extends readonly [
@@ -55,11 +67,11 @@ type Validate<
   ...infer Rest,
 ]
   ? IsAny<Ctx> extends true
-    ? Validate<Rest, Ctx & { [P in Key]: Contribution }>
+    ? ValidateEntries<Rest, Ctx & { [P in Key]: Contribution }>
     : Key extends keyof Ctx
       ? Conflict<Key>
       : keyof In extends keyof Ctx
-        ? Validate<Rest, Ctx & { [P in Key]: Contribution }>
+        ? ValidateEntries<Rest, Ctx & { [P in Key]: Contribution }>
         : `middleware-prereq: key '${Extract<Exclude<keyof In, keyof Ctx>, string>}' is not yet on the context (check ordering)`
   : true
 
@@ -94,9 +106,9 @@ type Validate<
  */
 export function pipeline<const Entries extends readonly AnyEntry[]>(
   entries: Entries,
-  handler: [Validate<Entries>] extends [true]
+  handler: [ValidateEntries<Entries>] extends [true]
     ? (req: Request, ctx: Accumulate<Entries, BaseContext>) => Promise<Response>
-    : Validate<Entries>,
+    : ValidateEntries<Entries>,
 ): FetchHandler {
   return (entries as readonly AnyEntry[]).reduceRight<AnyHandler>(
     (h, entry) => entry(h),
