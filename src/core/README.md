@@ -97,7 +97,7 @@ run: (config) =>
 - `try { … yield … } finally { … }` runs cleanup even when a downstream layer throws; `try/catch` around the `yield` can turn a downstream throw into a `Response`.
 - The runtime picks the path automatically (a plain body returns a `Promise`; a generator body returns an async generator). The plain path is unchanged — there's no cost or API difference unless you write `function*`.
 
-This is the one place the request-side default is relaxed, and `function*` is the visible signal that a middleware reaches into the response. [`cors/`](../middleware/cors/) is the worked example — preflight before the `yield`, header stamping after.
+This is the one place the request-side default is relaxed, and `function*` is the visible signal that a middleware reaches into the response. [`cors/`](../middleware/cors/README.md) is the worked example — preflight before the `yield`, header stamping after.
 
 ## Threading state through the stack
 
@@ -145,5 +145,5 @@ export default {
 ## See also
 
 - [Authoring guide](../../docs/authoring-guide.md) — write your own middleware.
-- [`feature-flag/`](../middleware/feature-flag/) — the worked example (request-side).
-- [`cors/`](../middleware/cors/) — the worked example of the response seam (`async function*`).
+- [`feature-flag/`](../middleware/feature-flag/README.md) — the worked example (request-side).
+- [`cors/`](../middleware/cors/README.md) — the worked example of the response seam (`async function*`).

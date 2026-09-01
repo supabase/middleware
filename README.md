@@ -197,7 +197,7 @@ run: (config) =>
 
 The `yield` expression resolves to the downstream `Response` (typed as `Response`, inferred — no annotation). `yield` the contribution at most once — `yield` means "run downstream and hand me the response." To short-circuit (handler never runs), `return new Response(...)`, exactly as a plain request-side middleware does. `try/finally` around the `yield` gives request-spanning cleanup; `try/catch` can turn a downstream throw into a `Response`.
 
-This is the **one** place the "request-side" guarantee is relaxed, and writing `function*` is the visible, opt-in signal — the 95% plain-`async` path is unchanged. [`/cors`](./src/middleware/cors/) is the worked example.
+This is the **one** place the "request-side" guarantee is relaxed, and writing `function*` is the visible, opt-in signal — the 95% plain-`async` path is unchanged. [`/cors`](./src/middleware/cors/README.md) is the worked example.
 
 ## Docs
 

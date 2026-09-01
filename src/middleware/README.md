@@ -2,10 +2,10 @@
 
 This directory holds the middleware that ship with `@supabase/middleware`.
 
-| Directory                          | Key               | What it does                                                        |
-| ---------------------------------- | ----------------- | ------------------------------------------------------------------- |
-| [`feature-flag/`](./feature-flag/) | `ctx.featureFlag` | Provider-agnostic feature flag. The request-side worked example.    |
-| [`cors/`](./cors/)                 | `ctx.cors`        | CORS — preflight in, headers out. The response-seam worked example. |
+| Directory                                   | Key               | What it does                                                        |
+| ------------------------------------------- | ----------------- | ------------------------------------------------------------------- |
+| [`feature-flag/`](./feature-flag/README.md) | `ctx.featureFlag` | Provider-agnostic feature flag. The request-side worked example.    |
+| [`cors/`](./cors/README.md)                 | `ctx.cors`        | CORS — preflight in, headers out. The response-seam worked example. |
 
 > **Writing your own middleware?** See the [authoring guide](../../docs/authoring-guide.md).
 > It covers the full path — `defineMiddleware`, tests, publishing, and composing
@@ -18,7 +18,7 @@ repository**.
 
 ## Adding a built-in
 
-Mirror [`feature-flag/`](./feature-flag/):
+Mirror [`feature-flag/`](./feature-flag/README.md):
 
 ```
 src/middleware/<name>/

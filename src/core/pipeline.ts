@@ -58,6 +58,8 @@ type Accumulate<
  *   ? (req: Request, ctx: Accumulated) => Promise<Response>
  *   : ValidateEntries<Entries, Seed>
  * ```
+ *
+ * @category Types
  */
 export type ValidateEntries<
   Entries extends readonly unknown[],
@@ -103,6 +105,8 @@ export type ValidateEntries<
  *   ),
  * }
  * ```
+ *
+ * @category Composition
  */
 export function pipeline<const Entries extends readonly AnyEntry[]>(
   entries: Entries,

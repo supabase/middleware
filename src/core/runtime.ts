@@ -44,6 +44,8 @@ export type { RuntimeName } from 'std-env'
  * The host's detected runtime name, re-exported from `std-env` (WinterCG
  * Runtime Keys: `'node' | 'deno' | 'bun' | 'workerd' | 'edge-light' | …`, or
  * `''` when unknown). Detected once at module load.
+ *
+ * @category Environment
  */
 export const runtimeName: RuntimeName = runtime
 
@@ -67,6 +69,8 @@ let platformEnv: Record<string, unknown> | undefined
  *
  * On Workers, bindings are per-request, so this returns `undefined` at module
  * top level until the first request has been handled.
+ *
+ * @category Environment
  */
 export function getEnv(key: string): string | undefined {
   if (platformEnv) {
@@ -99,10 +103,16 @@ const CONTEXT_MARK = Symbol.for('@supabase/middleware:context')
  * seeded context carries a symbol marker so the entry call can distinguish it
  * from a platform argument; the marker is invisible to `Object.keys` iteration
  * of string keys and to the type.)
+ *
+ * @category Types
  */
 export type BaseContext = object
 
-/** A composed handler: request + an accumulated context `>= BaseContext`. */
+/**
+ * A composed handler: request + an accumulated context `>= BaseContext`.
+ *
+ * @category Types
+ */
 export type Handler<Ctx extends BaseContext = BaseContext> = (
   req: Request,
   ctx: Ctx,
@@ -134,6 +144,8 @@ export type Handler<Ctx extends BaseContext = BaseContext> = (
  * would seed — so the cascade reaches the innermost handler at any depth either
  * way. Nor for `In` prerequisites (those travel outward), nor for
  * {@link pipeline} (which accumulates and validates from its entries array).
+ *
+ * @category Types
  */
 export type FetchHandler = (
   req: Request,
@@ -148,6 +160,8 @@ export type FetchHandler = (
  *
  * Public so a host embedding the engine (e.g. `@supabase/server`) can mint a
  * valid upstream context and spread its own keys onto it.
+ *
+ * @category Composition
  */
 export function seedContext(platformArg?: unknown): BaseContext {
   if (platformArg && typeof platformArg === 'object') {
@@ -167,6 +181,8 @@ export function seedContext(platformArg?: unknown): BaseContext {
  * same distinction before calling {@link seedContext}: reseeding with an
  * upstream context would stash it as the platform env, clobbering the real
  * bindings captured earlier.
+ *
+ * @category Composition
  */
 export function isContext(value: unknown): value is BaseContext {
   return !!value && typeof value === 'object' && CONTEXT_MARK in value

@@ -33,5 +33,13 @@
   ],
   "sort": ["source-order"],
   "kindSortOrder": ["Function", "Class", "Interface", "TypeAlias", "Enum"],
-  "categorizeByGroup": true
+  "categorizeByGroup": true,
+  "intentionallyNotExported": [
+    "Produced",
+    "AnyFetchHandler",
+    "MiddlewareArgs",
+    "ConfigArgs",
+    "AnyEntry",
+    "Accumulate"
+  ]
 }

@@ -15,14 +15,22 @@
 import { defineMiddleware } from '../../core/index.js'
 import type { Middleware } from '../../core/index.js'
 
-/** Decides the `Access-Control-Allow-Origin` value for a request. */
+/**
+ * Decides the `Access-Control-Allow-Origin` value for a request.
+ *
+ * @category Middleware
+ */
 export type CorsOrigin =
   | string
   | string[]
   | '*'
   | ((requestOrigin: string | null) => boolean)
 
-/** Per-instance configuration for {@link withCors}. */
+/**
+ * Per-instance configuration for {@link withCors}.
+ *
+ * @category Middleware
+ */
 export interface WithCorsConfig {
   /**
    * Allowed origin(s). A literal `'*'`, an exact origin string, a list of
@@ -57,7 +65,11 @@ export interface WithCorsConfig {
   optionsSuccessStatus?: number
 }
 
-/** Shape contributed at `ctx.cors`. */
+/**
+ * Shape contributed at `ctx.cors`.
+ *
+ * @category Middleware
+ */
 export interface CorsContribution {
   /** The resolved `Access-Control-Allow-Origin`, or `null` when not allowed. */
   allowedOrigin: string | null
@@ -153,6 +165,8 @@ function buildPreflightHeaders(
  *   ),
  * }
  * ```
+ *
+ * @category Middleware
  */
 export const withCors: Middleware<
   'cors',

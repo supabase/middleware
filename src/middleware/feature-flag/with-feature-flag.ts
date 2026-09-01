@@ -18,6 +18,8 @@ import type { Middleware } from '../../core/index.js'
  * Per-instance configuration the consumer passes to `withFeatureFlag(config, handler)`.
  *
  * Keep this surface small — every field becomes part of the public API.
+ *
+ * @category Middleware
  */
 export interface WithFeatureFlagConfig {
   /** Human-readable name for the flag. Echoed back on `ctx.featureFlag.name` and the default rejection body. */
@@ -50,6 +52,8 @@ export interface WithFeatureFlagConfig {
  * Richer return shape `evaluate` may produce, in place of a plain boolean,
  * when an A/B variant or provider payload is worth carrying through to the
  * handler.
+ *
+ * @category Middleware
  */
 export interface FeatureFlagVerdict {
   /** Whether the flag is enabled for this request. */
@@ -67,6 +71,8 @@ export interface FeatureFlagVerdict {
  * shape when the flag admitted, so `if (!ctx.featureFlag.enabled)` is a dead
  * branch by construction. The contribution shape is the contract this
  * middleware offers downstream handlers.
+ *
+ * @category Middleware
  */
 export interface FeatureFlagContribution {
   /** The flag's name, as passed to `withFeatureFlag`. */
@@ -108,6 +114,8 @@ export interface FeatureFlagContribution {
  *   },
  * })
  * ```
+ *
+ * @category Middleware
  */
 export const withFeatureFlag: Middleware<
   'featureFlag',
