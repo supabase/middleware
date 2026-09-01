@@ -26,6 +26,8 @@
  * single signature and reports a one-line TS2345, while `Middleware` is an
  * overload set and reports TS2769 with the sentinel on the first line of the
  * per-overload breakdown.
+ *
+ * @category Types
  */
 export type Conflict<Key extends string> =
   `middleware-conflict: key '${Key}' is already present on the upstream context`
@@ -48,6 +50,8 @@ type AnyFetchHandler = (req: Request, ctx: object) => Promise<Response>
  *
  * Produced by calling a middleware with config only — `withFoo(config)` — or
  * with no args for config-less middleware — `withFoo()`.
+ *
+ * @category Types
  */
 export interface Entry<Key extends string, In extends object, Contribution> {
   (handler: AnyFetchHandler): AnyFetchHandler

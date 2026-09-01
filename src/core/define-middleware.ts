@@ -27,7 +27,7 @@ function warnUnhonoredThirdArg(): void {
  * are **not** caught at compile time: `run`'s return is contextually typed
  * against a `Response | { [key]: … }` union via a generic mapped type, a position
  * where TypeScript suppresses excess-property checks — so a stray sibling key
- * slips past the types (harmlessly). The runtime {@link contributionOf} guard is
+ * slips past the types (harmlessly). The runtime `contributionOf` guard is
  * the backstop, and it throws only when the key is *missing* entirely (e.g. a
  * computed/typo'd key the types couldn't see). To opt into the excess check on a
  * given middleware, annotate `run`'s inner return type explicitly.
@@ -108,6 +108,8 @@ function warnUnhonoredThirdArg(): void {
  *   },
  * })
  * ```
+ *
+ * @category Composition
  */
 export function defineMiddleware<
   const Key extends string,
@@ -254,6 +256,8 @@ function contributionOf(result: unknown, key: string): unknown {
  * True when `T` is exactly `any` — the conflict check is skipped for `any` Base
  * (common in tests via `vi.fn` inference), since `keyof any` would false-positive
  * every key.
+ *
+ * @category Types
  */
 export type IsAny<T> = boolean extends (T extends never ? true : false)
   ? true
@@ -286,6 +290,8 @@ export type IsAny<T> = boolean extends (T extends never ? true : false)
  * is the failure mode this type exists to remove.
  *
  * @typeParam Handler - The handler type to resolve to when `Key` is free.
+ *
+ * @category Types
  */
 export type NoConflict<Key extends string, Base, Handler> =
   IsAny<Base> extends true
@@ -339,6 +345,8 @@ type MiddlewareArgs<Config, Handler> = undefined extends Config
  * The two directions cannot share one signature: the cascade needs the handler
  * argument to be a dead inference site, and the propagation needs it to be the
  * live one. Splitting them into ordered overloads lets each keep what it needs.
+ *
+ * @category Types
  */
 export interface Middleware<
   Key extends string,
