@@ -24,15 +24,6 @@ function warnUnhonoredThirdArg(): void {
  * `{ [key]: contribution }`; the framework merges `result[key]` into the
  * context and calls the inner handler.
  *
- * Extra keys on the returned object are ignored at runtime and not caught at
- * compile time. `run`'s return is contextually typed against a
- * `Response | { [key]: … }` union via a generic mapped type, a position where
- * TypeScript suppresses excess-property checks. The runtime backstop is the
- * `contributionOf` guard, which throws only when the key is missing
- * entirely (e.g. a computed or typo'd key the types could not see). To catch
- * excess keys at compile time instead, annotate `run`'s inner return type
- * explicitly.
- *
  * `run` is **request-side by default**: it runs before the handler and
  * never observes the handler's `Response`. Response-shaped concerns (CORS,
  * envelopes) belong in the handler or a `.then()` on the stack instead.
@@ -55,35 +46,43 @@ function warnUnhonoredThirdArg(): void {
  * context instead of merging it, so platform arguments never leak into `ctx`.
  * They are only captured as the module-scoped platform env behind `getEnv`.
  *
+ * @remarks
+ * Extra keys on the returned object are ignored at runtime and not caught at
+ * compile time, since `run`'s return is contextually typed against a
+ * `Response | { [key]: … }` union via a generic mapped type, a position
+ * where TypeScript suppresses excess-property checks. The `contributionOf`
+ * guard is the runtime backstop: it throws only when the key is missing
+ * entirely (e.g. a computed or typo'd key the types could not see). Annotate
+ * `run`'s inner return type explicitly to catch excess keys at compile time
+ * instead.
+ *
  * Typing:
  *
  * - **Prerequisite-free middleware can be the `fetch` export on their own.**
  *   Their produced handler has an optional `ctx`, so it satisfies a bare
  *   `(req) => Response` export and self-seeds a fresh context.
  * - **Middleware with `In` prerequisites require `ctx`.** They can only nest
- *   inside a wrapper that supplies those keys, never as the bare `fetch`
- *   export; otherwise the prerequisite would be a type-lie at the top level.
- *   The supplying wrapper need not be the immediately enclosing one: an
- *   unmet prerequisite is republished by each layer that does not contribute
- *   it, travelling outward until one does. If none does, the stack keeps a
- *   required `ctx` and fails wherever it is checked against
- *   {@link FetchHandler}. Annotate the outermost call to catch this at build
- *   time; an untyped `export default { fetch: … }` is no such check.
+ *   inside a wrapper (not necessarily the immediate one) that supplies those
+ *   keys, never as the bare `fetch` export, since that would make the
+ *   prerequisite a lie. An unmet prerequisite propagates outward until
+ *   something supplies it; if nothing does, the stack keeps a required
+ *   `ctx`, which fails only where it is checked against {@link FetchHandler}.
+ *   Annotate the outermost call to catch this at build time; an untyped
+ *   `export default { fetch: … }` will not catch it.
  * - **Accumulation needs no annotation.** The innermost handler sees every
- *   upstream key ambiently at any nesting depth. An unannotated outermost
- *   call has no contextual return type, so `Base` resolves to its constraint
- *   (the empty upstream, the same as a `satisfies FetchHandler` would seed),
- *   and the cascade proceeds inward from there.
+ *   upstream key ambiently at any nesting depth: an unannotated outermost
+ *   call has no contextual return type, so `Base` resolves to its
+ *   constraint (the empty upstream, same as `satisfies FetchHandler` would
+ *   seed), and the cascade proceeds inward.
  * - **Collision detection does need one.** Composing where the upstream
  *   already has the key resolves the handler parameter to a {@link Conflict}
- *   sentinel (see {@link NoConflict}), failing the stack to typecheck, but
- *   only under `satisfies FetchHandler` on the outermost call. The produced
- *   handler type records the upstream a stack requires, not the keys it
- *   contributes, so an unannotated enclosing call has nothing to check its
- *   own key against, and a duplicate key compiles silently. One annotation
- *   covers any depth; {@link pipeline} has no such gap since it validates
- *   from its entries array, so a stack that cannot carry the annotation is
- *   better written flat.
+ *   sentinel (see {@link NoConflict}), but only under `satisfies
+ *   FetchHandler` on the outermost call: the produced type records what a
+ *   stack requires, not what it contributes, so an unannotated call has
+ *   nothing to check a duplicate key against, and it compiles silently. One
+ *   annotation covers any depth. {@link pipeline} has no such gap, since it
+ *   validates from its entries array; a stack that cannot carry the
+ *   annotation is better written flat.
  *
  * @typeParam Key - The literal-string key contributed to ctx.
  * @typeParam Config - Configuration object the middleware accepts.
