@@ -55,6 +55,22 @@ type AnyFetchHandler = (req: Request, ctx: object) => Promise<Response>
  * Prefer the {@link Entry} alias, which spells the common single-key case as
  * `Entry<'flag', {}, boolean>` and the record case as `Entry<{ flag: boolean }>`.
  *
+ * @remarks
+ * `__contributes` is an optional phantom, so **any** `(handler) => handler`
+ * structurally satisfies any `EntryOf`. Annotating a hand-written function with
+ * a record it does not actually produce compiles, and the keys type as present
+ * while being `undefined` at runtime. Nothing here can catch that: the phantom
+ * has to stay optional, because it never exists as a value.
+ *
+ * That is why {@link defineComposite} *derives* a composite's contributions from
+ * its parts rather than accepting them as an argument — within that constructor
+ * over-declaring is impossible, since there is no place to name a key. The
+ * guarantee is a property of the constructor, not of this type. Declare
+ * multi-key contributions by building the thing with `defineComposite`; reach
+ * for a bare `EntryOf` annotation only to describe a function you did not write
+ * (wrapping third-party middleware), and treat the annotation as an assertion
+ * you are responsible for.
+ *
  * @category Types
  */
 export interface EntryOf<

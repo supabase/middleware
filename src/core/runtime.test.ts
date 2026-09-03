@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
-import { getEnv, isContext, runtimeName, seedContext } from './runtime.js'
+import {
+  bufferRequest,
+  getEnv,
+  isContext,
+  runtimeName,
+  seedContext,
+} from './runtime.js'
+import { defineMiddleware } from './define-middleware.js'
+import { pipeline } from './pipeline.js'
 
 describe('importable env access (getEnv)', () => {
   it('detects the test runner as node (std-env)', () => {
@@ -54,5 +62,56 @@ describe('context marker (entry detection)', () => {
 
   it('does not surface in Object.keys — ctx holds only middleware contributions', () => {
     expect(Object.keys(seedContext())).toEqual([])
+  })
+})
+
+describe('bufferRequest (host entry points)', () => {
+  const post = () =>
+    new Request('http://localhost/', { method: 'POST', body: '{"a":1}' })
+
+  const peek = defineMiddleware<'peek', void, Record<never, never>, string>({
+    key: 'peek',
+    run: () => async (req) => ({ peek: await req.text() }),
+  })
+
+  // `ctx: object` because a bare hand-rolled entry is a widened entry: it folds
+  // an index signature onto the accumulated context (see `Widened`).
+  const readTwice = async (req: Request, ctx: object) =>
+    Response.json({
+      peek: (ctx as { peek: string }).peek,
+      handler: await req.text(),
+    })
+
+  it('lets a middleware and the handler each read the body', async () => {
+    const app = pipeline([peek()], readTwice)
+    const res = await app(post())
+    expect(await res.json()).toEqual({ peek: '{"a":1}', handler: '{"a":1}' })
+  })
+
+  it('a host entry that seeds without buffering hands down a single-use body', async () => {
+    // The failure this export exists to prevent. A hand-rolled entry that calls
+    // `seedContext` but not `bufferRequest` is a valid upstream for every layer
+    // below it, and every one of them shares one single-use stream.
+    const unbuffered =
+      (handler: (req: Request, ctx: object) => Promise<Response>) =>
+      (req: Request, arg?: unknown) =>
+        handler(req, isContext(arg) ? arg : seedContext(arg))
+
+    const app = pipeline([unbuffered, peek()], readTwice)
+    await expect(app(post())).rejects.toThrow(/already been read/)
+  })
+
+  it('buffering alongside seeding fixes it', async () => {
+    const buffered =
+      (handler: (req: Request, ctx: object) => Promise<Response>) =>
+      (req: Request, arg?: unknown) =>
+        handler(
+          isContext(arg) || !req.body ? req : bufferRequest(req),
+          isContext(arg) ? arg : seedContext(arg),
+        )
+
+    const app = pipeline([buffered, peek()], readTwice)
+    const res = await app(post())
+    expect(await res.json()).toEqual({ peek: '{"a":1}', handler: '{"a":1}' })
   })
 })

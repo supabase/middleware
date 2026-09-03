@@ -324,3 +324,61 @@ describe('defineComposite — gate behavior', () => {
     expect(await res.json()).toEqual({ sub: 'user-1' })
   })
 })
+
+describe('defineComposite — nested composites', () => {
+  it('accepts a composite as a part, deriving through both levels', async () => {
+    const inner = defineComposite({
+      build: () => [passing('a', 1)(), passing('b', 2)()] as const,
+    })
+    const outer = defineComposite({
+      build: () => [inner(), passing('c', 3)()] as const,
+    })
+
+    const handler = outer(async (_req, ctx) =>
+      Response.json({ a: ctx.a, b: ctx.b, c: ctx.c }),
+    ) satisfies FetchHandler
+    const res = await handler(new Request('http://localhost/'))
+    expect(await res.json()).toEqual({ a: 1, b: 2, c: 3 })
+  })
+
+  it('keeps a key the inner composite hides hidden through the outer', async () => {
+    const inner = defineComposite({
+      build: () => [passing('secret', 1)(), passing('shown', 2)()] as const,
+      hide: ['secret'],
+    })
+    const outer = defineComposite({ build: () => [inner()] as const })
+
+    const handler = outer(async (_req, ctx) =>
+      Response.json({ keys: Object.keys(ctx).sort() }),
+    )
+    const res = await handler(new Request('http://localhost/'))
+    expect(await res.json()).toEqual({ keys: ['shown'] })
+  })
+
+  it('propagates an inner composite’s outstanding prerequisite outward', async () => {
+    const needsX = defineMiddleware<'y', void, { x: number }, true>({
+      key: 'y',
+      run: () => async () => ({ y: true }),
+    })
+    const inner = defineComposite({ build: () => [needsX()] as const })
+    const outer = defineComposite({ build: () => [inner()] as const })
+
+    const handler = pipeline([passing('x', 1)(), outer()], async (_req, ctx) =>
+      Response.json({ y: ctx.y, x: ctx.x }),
+    )
+    const res = await handler(new Request('http://localhost/'))
+    expect(await res.json()).toEqual({ y: true, x: 1 })
+  })
+
+  it('detects a collision between an inner composite key and a sibling', () => {
+    const inner = defineComposite({
+      build: () => [passing('dup', 1)()] as const,
+    })
+    const handler = pipeline(
+      [inner(), passing('dup', 2)()],
+      // @ts-expect-error — Conflict<'dup'>: the composite already contributes it
+      innerOk,
+    )
+    void handler
+  })
+})

@@ -1261,9 +1261,13 @@ pipeline([withAuth({ mode: 'user' }), withPostgres()], handler) // flat
 Three things are derived rather than declared, which is what makes the rule
 hold:
 
-- **Contributions** are the union of the parts'. A composite **cannot
-  over-declare** — there is no place to name a key, so it publishes exactly what
-  its parts contribute.
+- **Contributions** are the union of the parts'. Within `defineComposite` a
+  composite **cannot over-declare** — there is no place to name a key, so it
+  publishes exactly what its parts contribute. The guarantee lives in the
+  constructor, not in the `Entry` type: `__contributes` is an optional phantom,
+  so hand-annotating a function with a record it does not produce still
+  compiles. Build composites with `defineComposite` and that cannot happen;
+  reserve a bare `Entry` annotation for describing a function you did not write.
 - **Prerequisites** are whatever is still outstanding once each part's own
   contributions are accounted for. Above, `withMode` and `withClaims` declare
   `In: { auth }` and `withGate` supplies it, so it is discharged internally and

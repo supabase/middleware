@@ -13,6 +13,7 @@ import * as featureFlag from './middleware/feature-flag/index.js'
 describe('public API surface', () => {
   it('package root', () => {
     expect(Object.keys(root).sort()).toEqual([
+      'bufferRequest',
       'defineComposite',
       'defineMiddleware',
       'getEnv',
@@ -25,6 +26,7 @@ describe('public API surface', () => {
 
   it('core subpath', () => {
     expect(Object.keys(core).sort()).toEqual([
+      'bufferRequest',
       'defineComposite',
       'defineMiddleware',
       'getEnv',
