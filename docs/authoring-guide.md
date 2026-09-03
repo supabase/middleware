@@ -1226,10 +1226,87 @@ is unaffected. [`withCors`](../src/middleware/cors/with-cors.ts) is the
 built-in worked example: it answers preflight with a `return` before the
 `yield`, and stamps headers after.
 
+## Variant: bundling middleware into one
+
+Rule 1 keeps a middleware to one key. Some units of behavior genuinely own
+several: `withSupabase` in `@supabase/server` establishes `supabase`,
+`supabaseAdmin`, `jwtClaims`, `userClaims`, `authMode` and `authKeyName`, and
+callers want to reach for it as one thing rather than assemble six.
+
+`defineComposite` is that, without weakening the rule. A composite is _built
+from_ single-key middleware and its contributions are **derived** from theirs,
+so every key still traces to exactly one `defineMiddleware` call:
+
+```ts
+import { defineComposite } from '@supabase/middleware'
+
+export const withAuth = defineComposite({
+  build: (config: { mode: 'user' | 'none' }) =>
+    [withGate(config), withMode(), withClaims()] as const,
+  hide: ['auth'],
+})
+```
+
+`build` returns the parts outermost-first — the same order `pipeline` takes.
+Return the tuple `as const` so its length and order are visible to the types.
+
+What you get is an ordinary middleware. It nests, and it drops into a
+`pipeline` array, from one declaration:
+
+```ts
+withAuth({ mode: 'user' }, handler) // nested
+pipeline([withAuth({ mode: 'user' }), withPostgres()], handler) // flat
+```
+
+Three things are derived rather than declared, which is what makes the rule
+hold:
+
+- **Contributions** are the union of the parts'. A composite **cannot
+  over-declare** — there is no place to name a key, so it publishes exactly what
+  its parts contribute.
+- **Prerequisites** are whatever is still outstanding once each part's own
+  contributions are accounted for. Above, `withMode` and `withClaims` declare
+  `In: { auth }` and `withGate` supplies it, so it is discharged internally and
+  the composite has no prerequisites of its own. A part's `In` that _nothing_
+  in the array supplies is republished as the composite's, exactly as a nested
+  stack republishes an unmet requirement.
+- **Collisions** are checked per key, so a composite conflicts with an upstream
+  context that already carries any one of its keys.
+
+### `hide` — keys that are plumbing, not API
+
+The gate above contributes the whole auth result at `ctx.auth`, and the
+projections republish the individual keys the public contract promises. `auth`
+itself is an implementation detail. `hide` says so:
+
+```ts
+hide: ['auth']
+```
+
+Hidden keys are **stripped at the composite's boundary**, not merely omitted
+from the type — a downstream layer sees neither the type nor the value. Omitting
+only the type would make the declaration a lie and let internal plumbing shadow
+a same-named key belonging to a layer further down. Each name must be a key some
+part actually contributes, so `hide` cannot drift from `build`.
+
+This is what lets a composite present a flat public contract while using an
+intermediate key internally to carry state between its parts — the alternative
+being a side channel keyed on the request, which rule 3 exists to prevent.
+
+### Runtime
+
+There is none to speak of. The parts fold exactly as `pipeline` folds them, so
+each part still merges its own single key and `defineMiddleware` is unchanged. A
+part that short-circuits does so from _inside_ the fold, which means an
+enclosing middleware's response seam observes it — the same as any other nested
+stack.
+
 ## Rules
 
 1. **MUST** contribute exactly one key. A middleware that wants two slots is
-   doing too much — split it.
+   doing too much — split it, and bundle the pieces back up with
+   [`defineComposite`](#variant-bundling-middleware-into-one) if they ship as a
+   unit.
 2. **MUST** read configuration through `getEnv` from `@supabase/middleware`.
    **NEVER** touch `process.env`, `Deno.env`, or a Workers bindings object
    directly — that is what makes the middleware portable across hosts.

@@ -20,23 +20,35 @@
 
 import type { IsAny } from './define-middleware.js'
 import type { BaseContext, FetchHandler } from './runtime.js'
-import type { Conflict, Entry } from './types.js'
+import type { AnyEntry, Conflict, EntryOf, Widened } from './types.js'
 
 type AnyHandler = (req: Request, ctx: object) => Promise<Response>
-type AnyEntry = Entry<string, object, unknown>
 
-/** Fold a tuple of entries onto `Ctx`, accumulating each contribution in order. */
+/**
+ * Fold a tuple of entries onto `Ctx`, accumulating each entry's contributions
+ * record in order. An entry contributing one key adds one key; a composite adds
+ * one per part.
+ */
 type Accumulate<
   Entries extends readonly AnyEntry[],
   Ctx,
-> = Entries extends readonly [
-  Entry<infer Key, object, infer Contribution>,
-  ...infer Rest,
-]
+> = Entries extends readonly [EntryOf<infer C, object>, ...infer Rest]
   ? Rest extends readonly AnyEntry[]
-    ? Accumulate<Rest, Ctx & { [P in Key]: Contribution }>
+    ? Accumulate<Rest, Ctx & C>
     : Ctx
   : Ctx
+
+/**
+ * Keys an entry contributes that are already on the context, or `never` for a
+ * widened entry whose key set is unknown (see {@link Widened}).
+ */
+type Duplicated<Contributes, Ctx> =
+  Widened<Contributes> extends true
+    ? never
+    : Extract<keyof Contributes & keyof Ctx, string>
+
+/** Prerequisites an entry declares that are not yet on the context. */
+type Unmet<In, Ctx> = Extract<Exclude<keyof In, keyof Ctx>, string>
 
 /**
  * Validate a tuple of entries in order against a seed context. Each entry's
@@ -64,17 +76,14 @@ type Accumulate<
 export type ValidateEntries<
   Entries extends readonly unknown[],
   Ctx = BaseContext,
-> = Entries extends readonly [
-  Entry<infer Key, infer In, infer Contribution>,
-  ...infer Rest,
-]
+> = Entries extends readonly [EntryOf<infer C, infer In>, ...infer Rest]
   ? IsAny<Ctx> extends true
-    ? ValidateEntries<Rest, Ctx & { [P in Key]: Contribution }>
-    : Key extends keyof Ctx
-      ? Conflict<Key>
-      : keyof In extends keyof Ctx
-        ? ValidateEntries<Rest, Ctx & { [P in Key]: Contribution }>
-        : `middleware-prereq: key '${Extract<Exclude<keyof In, keyof Ctx>, string>}' is not yet on the context (check ordering)`
+    ? ValidateEntries<Rest, Ctx & C>
+    : [Duplicated<C, Ctx>] extends [never]
+      ? [Unmet<In, Ctx>] extends [never]
+        ? ValidateEntries<Rest, Ctx & C>
+        : `middleware-prereq: key '${Unmet<In, Ctx>}' is not yet on the context (check ordering)`
+      : Conflict<Duplicated<C, Ctx>>
   : true
 
 /**

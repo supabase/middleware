@@ -1,4 +1,4 @@
-import type { Conflict, ConfigArgs, Entry } from './types.js'
+import type { ConfigArgs, Conflict, ContributedKeys, Entry } from './types.js'
 import type { BaseContext } from './runtime.js'
 import { bufferRequest, isContext, seedContext } from './runtime.js'
 
@@ -264,8 +264,13 @@ export type IsAny<T> = boolean extends (T extends never ? true : false)
   : false
 
 /**
- * The collision check {@link Middleware} applies: resolves to `Handler` when
- * `Key` is free on `Base`, and to a {@link Conflict} sentinel when it is not.
+ * The collision check {@link Middleware} applies: resolves to `Handler` when the
+ * contributed key(s) are free on `Base`, and to a {@link Conflict} sentinel
+ * naming the first offender when they are not.
+ *
+ * Accepts either a single literal key (`NoConflict<'flag', Base, H>`) or a
+ * contributions record (`NoConflict<{ flag: boolean }, Base, H>`), so the same
+ * type serves {@link Middleware} and {@link Composite}.
  *
  * **Site it on the handler parameter, not the `Base` constraint.** TypeScript
  * substitutes a failed constraint silently but prints a failed parameter
@@ -293,12 +298,20 @@ export type IsAny<T> = boolean extends (T extends never ? true : false)
  *
  * @category Types
  */
-export type NoConflict<Key extends string, Base, Handler> =
+export type NoConflict<
+  KeyOrContributes extends string | object,
+  Base,
+  Handler,
+> =
   IsAny<Base> extends true
     ? Handler
-    : Key extends keyof Base
-      ? Conflict<Key>
-      : Handler
+    : [
+          Extract<ContributedKeys<KeyOrContributes> & keyof Base, string>,
+        ] extends [never]
+      ? Handler
+      : Conflict<
+          Extract<ContributedKeys<KeyOrContributes> & keyof Base, string>
+        >
 
 /**
  * The produced handler shape.

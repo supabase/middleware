@@ -45,17 +45,76 @@ type AnyFetchHandler = (req: Request, ctx: object) => Promise<Response>
 
 /**
  * A middleware with its config pre-applied, ready to be passed to {@link pipeline}.
- * Carries phantom type parameters so `pipeline` can accumulate each entry's
- * contribution onto the handler's `ctx` without requiring a manual annotation.
  *
- * Produced by calling a middleware with config only — `withFoo(config)` — or
- * with no args for config-less middleware — `withFoo()`.
+ * Carries its contributions as a **record** phantom — key-to-type for every key
+ * it puts on `ctx` — so `pipeline` can accumulate them onto the handler's `ctx`
+ * with no manual annotation. A middleware authored with {@link defineMiddleware}
+ * contributes a single key and so has a single-entry record; a composite built
+ * with {@link defineComposite} carries one entry per part.
+ *
+ * Prefer the {@link Entry} alias, which spells the common single-key case as
+ * `Entry<'flag', {}, boolean>` and the record case as `Entry<{ flag: boolean }>`.
  *
  * @category Types
  */
-export interface Entry<Key extends string, In extends object, Contribution> {
+export interface EntryOf<
+  Contributes extends object,
+  In extends object = Record<never, never>,
+> {
   (handler: AnyFetchHandler): AnyFetchHandler
-  readonly __key?: Key
+  readonly __contributes?: Contributes
   readonly __in?: In
-  readonly __contribution?: Contribution
 }
+
+/**
+ * The keys a contributions record puts on `ctx`, or the key itself when a
+ * single literal key is given.
+ */
+export type ContributedKeys<KeyOrContributes> = KeyOrContributes extends string
+  ? KeyOrContributes
+  : Extract<keyof KeyOrContributes, string>
+
+/**
+ * An {@link EntryOf} in either spelling.
+ *
+ * - **Record form** — `Entry<{ supabase: SupabaseClient; jwtClaims: Claims }>`.
+ *   One entry per contributed key. This is what a composite declares.
+ * - **Single-key form** — `Entry<'supabase', {}, SupabaseClient>`. The original
+ *   three-argument spelling, kept so existing annotations keep compiling; it
+ *   resolves to the one-key record `{ supabase: SupabaseClient }`.
+ *
+ * The two are told apart by whether the third argument is supplied, so a
+ * middleware whose contribution is genuinely `never` must use the record form
+ * (`Entry<{ k: never }>`) — the single-key form reads a `never` third argument
+ * as "not supplied".
+ *
+ * @category Types
+ */
+export type Entry<
+  KeyOrContributes extends string | object,
+  In extends object = Record<never, never>,
+  Contribution = never,
+> = [Contribution] extends [never]
+  ? EntryOf<KeyOrContributes & object, In>
+  : EntryOf<{ [K in KeyOrContributes & string]: Contribution }, In>
+
+/** Any entry, for use as a constraint. */
+export type AnyEntry = EntryOf<object, object>
+
+/**
+ * True when a contributions record has a string index signature rather than
+ * literal keys — a *widened* entry, typically one hand-wrapped as
+ * `Entry<string, object, unknown>` instead of produced by `defineMiddleware`.
+ *
+ * Its key set is unknown, so a collision check against it cannot be meaningful:
+ * every key would appear to be both contributed and in conflict. Conflict
+ * detection skips widened entries for the same reason it skips an `any` context.
+ *
+ * Note this does not make a widened entry harmless. It still folds an index
+ * signature onto the accumulated context, so entries placed *after* it see
+ * every literal key as already present. Fixing that means not widening the
+ * entry in the first place.
+ */
+export type Widened<Contributes> = string extends keyof Contributes
+  ? true
+  : false

@@ -15,6 +15,12 @@
  * @packageDocumentation
  */
 
+export { defineComposite } from './define-composite.js'
+export type {
+  Composite,
+  Contributions,
+  Prerequisites,
+} from './define-composite.js'
 export { defineMiddleware } from './define-middleware.js'
 export type { IsAny, Middleware, NoConflict } from './define-middleware.js'
 export { pipeline } from './pipeline.js'
@@ -26,4 +32,10 @@ export type {
   Handler,
   RuntimeName,
 } from './runtime.js'
-export type { Conflict, Entry } from './types.js'
+export type {
+  AnyEntry,
+  Conflict,
+  ContributedKeys,
+  Entry,
+  EntryOf,
+} from './types.js'

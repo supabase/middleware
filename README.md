@@ -64,6 +64,15 @@ deno add jsr:@supabase/middleware
 | `@supabase/middleware/feature-flag` | Provider-agnostic feature flag — admit or short-circuit per request.                                                                                           |
 | `@supabase/middleware/cors`         | CORS — answers preflight and stamps response headers (the worked example of the response seam).                                                                |
 
+## Bundling several into one
+
+A middleware contributes one key. When a unit of behavior owns several and
+should still compose as one thing, `defineComposite` builds it from single-key
+parts and derives its contributions from theirs — so it nests _and_ drops into a
+`pipeline` array from one declaration, and every key still traces to exactly one
+`defineMiddleware` call. See the
+[authoring guide](docs/authoring-guide.md#variant-bundling-middleware-into-one).
+
 ## How it composes
 
 Each middleware contributes one typed key to `ctx`. Pass entries as a flat array to `pipeline` — first in the array runs first on the request. The handler sees **every** upstream key ambiently, typed from the entries array (the `satisfies FetchHandler` below just asserts the result is usable as the `fetch` export):
