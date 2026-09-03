@@ -95,9 +95,9 @@ export type ContributedKeys<KeyOrContributes> = KeyOrContributes extends string
  *
  * - **Record form** — `Entry<{ supabase: SupabaseClient; jwtClaims: Claims }>`.
  *   One entry per contributed key. This is what a composite declares.
- * - **Single-key form** — `Entry<'supabase', {}, SupabaseClient>`. The original
- *   three-argument spelling, kept so existing annotations keep compiling; it
- *   resolves to the one-key record `{ supabase: SupabaseClient }`.
+ * - **Single-key form** — `Entry<'supabase', {}, SupabaseClient>`. Shorthand for
+ *   a middleware contributing one key, which is what {@link defineMiddleware}
+ *   produces; resolves to the record `{ supabase: SupabaseClient }`.
  *
  * The two are told apart by whether the third argument is supplied, so a
  * middleware whose contribution is genuinely `never` must use the record form

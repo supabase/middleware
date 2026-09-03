@@ -89,9 +89,9 @@ describe('bufferRequest (host entry points)', () => {
   })
 
   it('a host entry that seeds without buffering hands down a single-use body', async () => {
-    // The failure this export exists to prevent. A hand-rolled entry that calls
-    // `seedContext` but not `bufferRequest` is a valid upstream for every layer
-    // below it, and every one of them shares one single-use stream.
+    // A hand-rolled entry that calls `seedContext` but not `bufferRequest` is a
+    // valid upstream for every layer below it, and all of them then share one
+    // single-use stream — so whichever reads first locks out the rest.
     const unbuffered =
       (handler: (req: Request, ctx: object) => Promise<Response>) =>
       (req: Request, arg?: unknown) =>

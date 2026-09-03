@@ -1299,11 +1299,10 @@ being a side channel keyed on the request, which rule 3 exists to prevent.
 
 ### Runtime
 
-There is none to speak of. The parts fold exactly as `pipeline` folds them, so
-each part still merges its own single key and `defineMiddleware` is unchanged. A
-part that short-circuits does so from _inside_ the fold, which means an
-enclosing middleware's response seam observes it — the same as any other nested
-stack.
+There is none to speak of. The parts fold exactly as `pipeline` folds them, each
+merging its own single key. A part that short-circuits does so from _inside_ the
+fold, which means an enclosing middleware's response seam observes it — the same
+as any other nested stack.
 
 ## Rules
 

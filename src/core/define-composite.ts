@@ -2,18 +2,17 @@
  * Composite middleware — bundling a series of middleware into one.
  *
  * {@link defineMiddleware} builds a middleware that contributes exactly one
- * key. That rule is what keeps a stack readable and a contribution greppable,
- * and it stays. But some units of behavior genuinely own several keys —
- * `withSupabase` in `@supabase/server` establishes six — and before this
- * primitive their only options were to publish a tuple that consumers had to
- * spread, or to hand-write a multi-key function that the type layer could not
- * describe (see the `Entry` phantom: contributions used to be one `Key` plus one
- * `Contribution`).
+ * key, which is what keeps a stack readable and a contribution greppable. Some
+ * units of behavior own several: `withSupabase` in `@supabase/server`
+ * establishes six, and callers reach for it as one thing rather than assembling
+ * the parts at every call site.
  *
- * `defineComposite` closes that gap without weakening the one-key rule: a
- * composite is *built from* single-key middleware, and its contributions are
- * **derived** from theirs. It cannot declare a key that no part supplies, so
- * every key on a composite still traces to exactly one `defineMiddleware` call.
+ * A composite is how a set of single-key middleware ships as one middleware,
+ * without loosening the one-key rule. It is *built from* those parts and its
+ * contributions are **derived** from theirs, so it cannot declare a key no part
+ * supplies and every key on it traces to exactly one `defineMiddleware` call.
+ * What a consumer gets is an ordinary middleware: it nests, and it drops into a
+ * {@link pipeline} array, from one declaration.
  *
  * @packageDocumentation
  */
@@ -133,10 +132,9 @@ export interface Composite<
  * earlier part contributes is discharged internally, and anything outstanding
  * becomes the composite's own `In`.
  *
- * At runtime the parts fold exactly as `pipeline` folds them, so there is no new
- * execution behavior and no change to `defineMiddleware`: each part still merges
- * its own single key. In particular a part that short-circuits does so from
- * *inside* the fold, so an enclosing middleware's response seam observes it.
+ * At runtime the parts fold exactly as `pipeline` folds them, each merging its
+ * own single key. A part that short-circuits therefore does so from *inside* the
+ * fold, where an enclosing middleware's response seam observes its response.
  *
  * @param spec.build - `(config) => readonly [...parts]`, outermost first. Return
  * the tuple `as const` so its length and order are visible to the types.
