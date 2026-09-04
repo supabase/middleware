@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/supabase/middleware/compare/middleware-v0.4.0...middleware-v0.5.0) (2026-09-04)
+
+
+### Features
+
+* add defineComposite for bundling middleware into one ([#36](https://github.com/supabase/middleware/issues/36)) ([9396cb7](https://github.com/supabase/middleware/commit/9396cb7d2cdd50b7cf2997764910936db25b7ecf))
+
 ## [0.4.0](https://github.com/supabase/middleware/compare/middleware-v0.3.1...middleware-v0.4.0) (2026-08-26)
 
 
