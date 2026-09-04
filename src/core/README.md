@@ -72,6 +72,15 @@ Two type-level guarantees:
 
 > **What `satisfies FetchHandler` is for.** Two things only: asserting the stack can be the `fetch` export (above), and **collision detection** for nested handlers. It is _not_ needed for accumulation — an unannotated outermost call resolves `Base` to its constraint, the same empty upstream the annotation would seed, so `ctx` types at any depth either way. Collision detection is the one guarantee nesting doesn't get for free: the produced handler type records the upstream a stack _requires_, never the keys it _contributes_, so an unannotated enclosing call has nothing to check its own key against and a duplicate compiles silently. One annotation on the outermost call covers any depth, and adds no runtime code. `pipeline` has no such gap — prefer it where you can.
 
+## Bundling middleware into one
+
+`defineComposite` builds one middleware out of several, deriving its
+contributions and prerequisites from its parts. Each part still contributes a
+single key, so the one-key rule holds; the composite is what lets a set of them
+ship and compose as a unit. `internal` marks a part's key as plumbing and
+scopes it to the composite. See the
+[authoring guide](../../docs/authoring-guide.md#variant-bundling-middleware-into-one).
+
 ## Composition rules
 
 1. **Outer runs first.** Each middleware is a fetch-handler wrapper, so the outermost sees the request first and its contribution appears on `ctx` for everything it wraps. Reverse the order and any inner middleware that declared an outer's key as a prerequisite won't compile.
@@ -132,7 +141,7 @@ export default {
 | Export                                      | Description                                                                                                                                                                                                                                                 |
 | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pipeline(entries, handler)`                | Compose a flat array of entries around a handler. Returns a `FetchHandler`.                                                                                                                                                                                 |
-| `Entry<Key, In, Contribution>`              | Type produced by `mw(config)`. Carries phantom types for `pipeline`'s accumulation.                                                                                                                                                                         |
+| `Entry<Contributes, In>`                    | Type produced by `mw(config)`. Carries a key-to-type record of contributions as a phantom, for `pipeline`'s accumulation. `SingleKeyEntry<Key, In, Contribution>` is the one-key shorthand.                                                                 |
 | `defineMiddleware(spec)`                    | Author helper: declare a middleware. Returns a `(config, handler)` callable.                                                                                                                                                                                |
 | `FetchHandler`                              | The type of a stack handed to the host (the `fetch` export, `Deno.serve(app)`, …). Required for collision detection in nested handlers; also rejects a stack whose `In` prerequisite nobody supplied. Prerequisites between layers are enforced without it. |
 | `Conflict<Key>`                             | Sentinel string the handler parameter resolves to when a middleware would shadow an upstream key.                                                                                                                                                           |

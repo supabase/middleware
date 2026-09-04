@@ -22,8 +22,12 @@
  * Raising the floor is a deliberate act: bump `typescript` in this fixture's
  * package.json and the Requirements section of the root README together.
  */
-import { defineMiddleware, pipeline } from '@supabase/middleware'
-import type { FetchHandler } from '@supabase/middleware'
+import {
+  defineComposite,
+  defineMiddleware,
+  pipeline,
+} from '@supabase/middleware'
+import type { Entry, FetchHandler, SingleKeyEntry } from '@supabase/middleware'
 import { withCors } from '@supabase/middleware/cors'
 import { withFeatureFlag } from '@supabase/middleware/feature-flag'
 
@@ -111,3 +115,102 @@ void _unmet
 
 const _met = withA(withNeedsAlpha(innerOk)) satisfies FetchHandler
 void _met
+
+// --- Composites -------------------------------------------------------------
+// A composite declares a *record* of contributions derived from its parts, so
+// the same checks that guard a single-key middleware have to hold across a set.
+
+const withGate = defineMiddleware<
+  'auth',
+  { mode: string },
+  Record<never, never>,
+  { mode: string }
+>({
+  key: 'auth',
+  run: (config) => async () => ({ auth: { mode: config.mode } }),
+})
+const withMode = defineMiddleware<
+  'authMode',
+  void,
+  { auth: { mode: string } },
+  string
+>({
+  key: 'authMode',
+  run: () => async (_req, ctx) => ({ authMode: ctx.auth.mode }),
+})
+
+const withAuth = defineComposite({
+  build: (config: { mode: string }) => [withGate(config), withMode()] as const,
+  internal: ['auth'],
+})
+
+// Nested: the composite's public key reaches the handler, and an upstream key
+// still cascades in beside it.
+const _compNested = withA(
+  withAuth({ mode: 'user' }, async (_req, ctx) => {
+    const mode: string = ctx.authMode
+    const a: number = ctx.alpha.v
+    void mode
+    void a
+    return Response.json({ ok: true })
+  }),
+) satisfies FetchHandler
+void _compNested
+
+// Flat: the same declaration drops into a pipeline array.
+const _compFlat = pipeline([withAuth({ mode: 'user' })], async (_req, ctx) => {
+  const mode: string = ctx.authMode
+  void mode
+  return Response.json({ ok: true })
+})
+void _compFlat
+
+// A hidden key is absent from the declared contributions.
+const _compHidden = withAuth({ mode: 'user' }, async (_req, ctx) => {
+  // @ts-expect-error — 'auth' is internal plumbing, hidden at the boundary
+  void ctx.auth
+  return Response.json({ ok: true })
+})
+void _compHidden
+
+// `internal` can only name a key some part actually contributes.
+defineComposite({
+  build: () => [withA()] as const,
+  // @ts-expect-error — 'nope' is contributed by no part
+  internal: ['nope'],
+})
+
+// A composite's key collides with the upstream context just as a single key does.
+const _compDup = defineComposite({ build: () => [withA()] as const })
+const _compCollision =
+  // @ts-expect-error — Conflict<'alpha'>: the upstream already carries 'alpha'
+  withA(_compDup(innerOk)) satisfies FetchHandler
+void _compCollision
+
+// A prerequisite no part supplies is republished as the composite's own, so the
+// stack keeps a required `ctx` and cannot be the `fetch` export.
+const _compNeeds = defineComposite({ build: () => [withNeedsAlpha()] as const })
+const _compUnmet =
+  // @ts-expect-error — nothing contributes 'alpha', so `ctx` stays required
+  _compNeeds(innerOk) satisfies FetchHandler
+void _compUnmet
+
+// --- `Entry` spellings ------------------------------------------------------
+// The record form is the type; `SingleKeyEntry` is the one-key shorthand. Both
+// must resolve to the same thing at the floor.
+const _record: Entry<{ alpha: { v: number } }> = withA()
+void _record
+const _single: SingleKeyEntry<
+  'alpha',
+  Record<never, never>,
+  { v: number }
+> = withA()
+void _single
+
+// A string first argument is a constraint violation, not a silently empty
+// contribution. This is the negative that matters: the two-argument spelling
+// used to resolve to a `never` contribution and push a bogus conflict onto the
+// *next* entry instead of failing here.
+// @ts-expect-error — 'alpha' is not an object; use SingleKeyEntry or a record
+type _Bad = Entry<'alpha', Record<never, never>>
+void 0 as unknown as _Bad

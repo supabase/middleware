@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { defineMiddleware } from './define-middleware.js'
 import type { FetchHandler } from './runtime.js'
 import { pipeline } from './pipeline.js'
-import type { Entry, ValidateEntries } from '../index.js'
+import type { SingleKeyEntry, ValidateEntries } from '../index.js'
 
 const innerOk = async () => Response.json({ ok: true })
 
@@ -202,7 +202,7 @@ describe('type guarantees (tsc-verified)', () => {
 })
 
 describe('ValidateEntries (exported, tsc-verified)', () => {
-  type NeedsAuthEntry = Entry<
+  type NeedsAuthEntry = SingleKeyEntry<
     'profile',
     { auth: { userId: string } },
     { displayName: string }

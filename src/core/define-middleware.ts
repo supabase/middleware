@@ -1,4 +1,4 @@
-import type { Conflict, ConfigArgs, Entry } from './types.js'
+import type { ConfigArgs, Conflict, ContributedKeys, Entry } from './types.js'
 import type { BaseContext } from './runtime.js'
 import { bufferRequest, isContext, seedContext } from './runtime.js'
 
@@ -146,7 +146,7 @@ export function defineMiddleware<
           req: Request,
           ctx: object,
         ) => Promise<Response>
-      return wrap as Entry<Key, In, Contribution>
+      return wrap as Entry<{ [K in Key]: Contribution }, In>
     }
 
     // Handler call — last arg is a function.
@@ -265,7 +265,12 @@ export type IsAny<T> = boolean extends (T extends never ? true : false)
 
 /**
  * The collision check {@link Middleware} applies: resolves to `Handler` when
- * `Key` is free on `Base`, and to a {@link Conflict} sentinel when it is not.
+ * every contributed key is free on `Base`, and otherwise to a {@link Conflict}
+ * sentinel naming the colliding key — a union of them where several collide.
+ *
+ * Accepts either a single literal key (`NoConflict<'flag', Base, H>`) or a
+ * contributions record (`NoConflict<{ flag: boolean }, Base, H>`), so the same
+ * type serves {@link Middleware} and {@link Composite}.
  *
  * **Site it on the handler parameter, not the `Base` constraint.** TypeScript
  * substitutes a failed constraint silently but prints a failed parameter
@@ -293,12 +298,20 @@ export type IsAny<T> = boolean extends (T extends never ? true : false)
  *
  * @category Types
  */
-export type NoConflict<Key extends string, Base, Handler> =
+export type NoConflict<
+  KeyOrContributes extends string | object,
+  Base,
+  Handler,
+> =
   IsAny<Base> extends true
     ? Handler
-    : Key extends keyof Base
-      ? Conflict<Key>
-      : Handler
+    : [
+          Extract<ContributedKeys<KeyOrContributes> & keyof Base, string>,
+        ] extends [never]
+      ? Handler
+      : Conflict<
+          Extract<ContributedKeys<KeyOrContributes> & keyof Base, string>
+        >
 
 /**
  * The produced handler shape.
@@ -427,5 +440,12 @@ export interface Middleware<
   // Entry for use in a `pipeline` array. Falls through from the handler overload
   // because config-only calls either have the wrong arity (required-config mw)
   // or pass a non-function (which doesn't match MiddlewareArgs' Handler slot).
-  (...args: ConfigArgs<Config>): Entry<Key, In, Contribution>
+  //
+  // Spelled out rather than via the `SingleKeyEntry` shorthand, deliberately:
+  // `Key` and `Contribution` are still this interface's parameters here, and any
+  // indirection over `Entry` in that position (alias or interface, both tried)
+  // leaves a mapped type `Contributions` cannot infer through, collapsing every
+  // composite part's contributions to the constraint. Concrete instantiations
+  // are unaffected, so the shorthand is safe at call sites.
+  (...args: ConfigArgs<Config>): Entry<{ [K in Key]: Contribution }, In>
 }

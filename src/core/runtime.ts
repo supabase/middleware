@@ -222,6 +222,21 @@ const BUFFERED_METHODS = new Set([
  * *buffering* model, not a streaming one — to forward the body, reconstruct it,
  * e.g. `new Request(req.url, { method: req.method, headers: req.headers, body:
  * await req.arrayBuffer() })`.
+ *
+ * Applied automatically by {@link defineMiddleware} at the entry call, so a
+ * normal stack never calls this directly. It is public for the same reason
+ * {@link seedContext} and {@link isContext} are: a host embedding the engine
+ * (e.g. `@supabase/server`) can be the entry point itself, and an entry that
+ * seeds a context without buffering hands the whole stack below it a single-use
+ * body — the first reader silently locks out every later one. Buffer alongside
+ * seeding:
+ *
+ * ```ts
+ * const upstream = isContext(arg) ? arg : seedContext(arg)
+ * const request = isContext(arg) || !req.body ? req : bufferRequest(req)
+ * ```
+ *
+ * @category Composition
  */
 export function bufferRequest(req: Request): Request {
   let buffer: Promise<ArrayBuffer> | undefined

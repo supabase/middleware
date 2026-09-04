@@ -1226,10 +1226,99 @@ is unaffected. [`withCors`](../src/middleware/cors/with-cors.ts) is the
 built-in worked example: it answers preflight with a `return` before the
 `yield`, and stamps headers after.
 
+## Variant: bundling middleware into one
+
+Rule 1 keeps a middleware to one key. Some units of behavior genuinely own
+several: `withSupabase` in `@supabase/server` establishes `supabase`,
+`supabaseAdmin`, `jwtClaims`, `userClaims`, `authMode` and `authKeyName`, and
+callers want to reach for it as one thing rather than assemble six.
+
+`defineComposite` is that, without weakening the rule. A composite is _built
+from_ single-key middleware and its contributions are **derived** from theirs,
+so every key still traces to exactly one `defineMiddleware` call:
+
+```ts
+import { defineComposite } from '@supabase/middleware'
+
+export const withAuth = defineComposite({
+  build: (config: { mode: 'user' | 'none' }) =>
+    [withGate(config), withMode(), withClaims()] as const,
+  internal: ['auth'],
+})
+```
+
+`build` returns the parts outermost-first — the same order `pipeline` takes.
+Return the tuple `as const` so its length and order are visible to the types.
+
+What you get is an ordinary middleware. It nests, and it drops into a
+`pipeline` array, from one declaration:
+
+```ts
+withAuth({ mode: 'user' }, handler) // nested
+pipeline([withAuth({ mode: 'user' }), withPostgres()], handler) // flat
+```
+
+Three things are derived rather than declared, which is what makes the rule
+hold:
+
+- **Contributions** are the union of the parts'. Within `defineComposite` a
+  composite **cannot over-declare** — there is no place to name a key, so it
+  publishes exactly what its parts contribute. The guarantee lives in the
+  constructor, not in the `Entry` type: `__contributes` is an optional phantom,
+  so hand-annotating a function with a record it does not produce still
+  compiles. Build composites with `defineComposite` and that cannot happen;
+  reserve a bare `Entry` annotation for describing a function you did not write.
+- **Prerequisites** are whatever is still outstanding once each part's own
+  contributions are accounted for. Above, `withMode` and `withClaims` declare
+  `In: { auth }` and `withGate` supplies it, so it is discharged internally and
+  the composite has no prerequisites of its own. A part's `In` that _nothing_
+  in the array supplies is republished as the composite's, exactly as a nested
+  stack republishes an unmet requirement.
+- **Collisions** are checked per key, so a composite conflicts with an upstream
+  context that already carries any one of its keys.
+
+### `internal` — keys that are plumbing, not API
+
+The gate above contributes the whole auth result at `ctx.auth`, and the
+projections republish the individual keys the public contract promises. `auth`
+itself is an implementation detail. `internal` says so:
+
+```ts
+internal: ['auth']
+```
+
+Internal keys are **scoped to the composite** — stripped at its boundary, not
+merely omitted from the type. Both halves matter, in opposite directions:
+stripping keeps the composite's plumbing from leaking to a downstream layer that
+reads the same name, and where an _upstream_ layer already contributed that name,
+its value is restored on the way out, so marking a key internal can never make
+someone else's disappear.
+
+The restore has to happen at runtime: internal keys are absent from the
+composite's contributions and so invisible to both `NoConflict` and
+`ValidateEntries`, which means the downstream _type_ keeps the upstream's
+value — this is what makes the runtime agree with it.
+
+Each name must be a key some part actually contributes, so `internal` cannot
+drift from `build`.
+
+This is what lets a composite present a flat public contract while using an
+intermediate key internally to carry state between its parts — the alternative
+being a side channel keyed on the request, which rule 3 exists to prevent.
+
+### Runtime
+
+There is none to speak of. The parts fold exactly as `pipeline` folds them, each
+merging its own single key. A part that short-circuits does so from _inside_ the
+fold, which means an enclosing middleware's response seam observes it — the same
+as any other nested stack.
+
 ## Rules
 
 1. **MUST** contribute exactly one key. A middleware that wants two slots is
-   doing too much — split it.
+   doing too much — split it, and bundle the pieces back up with
+   [`defineComposite`](#variant-bundling-middleware-into-one) if they ship as a
+   unit.
 2. **MUST** read configuration through `getEnv` from `@supabase/middleware`.
    **NEVER** touch `process.env`, `Deno.env`, or a Workers bindings object
    directly — that is what makes the middleware portable across hosts.
