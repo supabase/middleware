@@ -55,20 +55,15 @@ type AnyFetchHandler = (req: Request, ctx: object) => Promise<Response>
  * {@link SingleKeyEntry} spells the one-key case without the braces.
  *
  * @remarks
- * `__contributes` is an optional phantom, so **any** `(handler) => handler`
- * structurally satisfies any `Entry`. Annotating a hand-written function with a
- * record it does not actually produce compiles, and the keys type as present
- * while being `undefined` at runtime. Nothing here can catch that: the phantom
- * has to stay optional, because it never exists as a value.
+ * `__contributes` is an optional phantom — it never exists as a value, so it
+ * cannot be required — which means **any** `(handler) => handler` structurally
+ * satisfies any `Entry`. Annotate a function with a record it does not produce
+ * and it compiles, with the keys typed as present and `undefined` at runtime.
  *
- * That is why {@link defineComposite} *derives* a composite's contributions from
- * its parts rather than accepting them as an argument — within that constructor
- * over-declaring is impossible, since there is no place to name a key. The
- * guarantee is a property of the constructor, not of this type. Declare
- * multi-key contributions by building the thing with `defineComposite`; reach
- * for a bare `Entry` annotation only to describe a function you did not write
- * (wrapping third-party middleware), and treat the annotation as an assertion
- * you are responsible for.
+ * So the no-over-declaring guarantee belongs to {@link defineComposite}, which
+ * derives contributions from its parts, not to this type. Build multi-key
+ * contributions with that; reach for a bare `Entry` annotation only to describe
+ * a function you did not write, and treat it as an assertion you own.
  *
  * @category Types
  */
@@ -88,20 +83,14 @@ export interface Entry<
  * `SingleKeyEntry<'supabase', {}, SupabaseClient>` is the one-key record
  * `Entry<{ supabase: SupabaseClient }>`, spelled without the braces.
  *
- * Use it wherever you name an entry type — most often the return type of a
- * wrapper that threads a generic through a middleware, which is the common
- * reason to write the type out at all:
+ * Use it wherever you name an entry type — most often a wrapper's return type,
+ * threading a generic through a middleware, which is the usual reason to write
+ * the type out at all:
  *
  * ```ts
- * export function withThing<Database = unknown>(
+ * function withThing<Database = unknown>(
  *   config?: WithThingConfig,
- * ): SingleKeyEntry<'thing', Record<never, never>, Client<Database>> {
- *   return base(config) as unknown as SingleKeyEntry<
- *     'thing',
- *     Record<never, never>,
- *     Client<Database>
- *   >
- * }
+ * ): SingleKeyEntry<'thing', Record<never, never>, Client<Database>>
  * ```
  *
  * An entry declared this way composes normally, {@link defineComposite}

@@ -264,9 +264,9 @@ export type IsAny<T> = boolean extends (T extends never ? true : false)
   : false
 
 /**
- * The collision check {@link Middleware} applies: resolves to `Handler` when the
- * contributed key(s) are free on `Base`, and to a {@link Conflict} sentinel
- * naming the first offender when they are not.
+ * The collision check {@link Middleware} applies: resolves to `Handler` when
+ * every contributed key is free on `Base`, and otherwise to a {@link Conflict}
+ * sentinel naming the colliding key — a union of them where several collide.
  *
  * Accepts either a single literal key (`NoConflict<'flag', Base, H>`) or a
  * contributions record (`NoConflict<{ flag: boolean }, Base, H>`), so the same
@@ -437,18 +437,15 @@ export interface Middleware<
     >
   ): Produced<Base & Omit<Ctx, Key>, In & Omit<Ctx, Key>>
   // Config-only call — `mw(config)` (or `mw()` for config-less) returns an
-  // Entry for use in a `pipeline` array.
-  //
-  // Spelled out rather than via the `SingleKeyEntry` shorthand, and it has to
-  // be. `Key` and `Contribution` are still this interface's own parameters
-  // here, so any indirection over `Entry` — alias or interface, both tried —
-  // leaves a deferred mapped type that `Contributions` cannot infer through
-  // when `defineComposite` folds its `build` result: every part's contributions
-  // collapse to the constraint, and the visible symptom is a composite's
-  // `internal` list failing because `keyof Contributions<Entries>` became
-  // `never`. Concrete instantiations are unaffected, so the shorthand is safe
-  // everywhere a caller names a key literally. Falls through from the handler overload
+  // Entry for use in a `pipeline` array. Falls through from the handler overload
   // because config-only calls either have the wrong arity (required-config mw)
   // or pass a non-function (which doesn't match MiddlewareArgs' Handler slot).
+  //
+  // Spelled out rather than via the `SingleKeyEntry` shorthand, deliberately:
+  // `Key` and `Contribution` are still this interface's parameters here, and any
+  // indirection over `Entry` in that position (alias or interface, both tried)
+  // leaves a mapped type `Contributions` cannot infer through, collapsing every
+  // composite part's contributions to the constraint. Concrete instantiations
+  // are unaffected, so the shorthand is safe at call sites.
   (...args: ConfigArgs<Config>): Entry<{ [K in Key]: Contribution }, In>
 }

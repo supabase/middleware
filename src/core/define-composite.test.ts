@@ -164,8 +164,8 @@ describe('defineComposite', () => {
   })
 })
 
-describe('defineComposite — hidden keys', () => {
-  it('strips a hidden key from ctx at the boundary', async () => {
+describe('defineComposite — internal keys', () => {
+  it('strips an internal key from ctx at the boundary', async () => {
     const handler = withAuth({ mode: 'none' }, async (_req, ctx) =>
       Response.json({ keys: Object.keys(ctx).sort() }),
     )
@@ -175,7 +175,7 @@ describe('defineComposite — hidden keys', () => {
     expect(await res.json()).toEqual({ keys: ['authMode', 'claims'] })
   })
 
-  it('hides the key from a downstream middleware too, not just the handler', async () => {
+  it('hides it from a downstream middleware too, not just the handler', async () => {
     const spy = defineMiddleware<'spy', void, Record<never, never>, string[]>({
       key: 'spy',
       run: () => async (_req, ctx) => ({ spy: Object.keys(ctx).sort() }),
@@ -202,7 +202,7 @@ describe('defineComposite — hidden keys', () => {
     expect(await res.json()).toEqual({ after: 2, mode: 'none' })
   })
 
-  it('leaves ctx untouched when nothing is hidden', async () => {
+  it('leaves ctx untouched when nothing is marked internal', async () => {
     const composite = defineComposite({
       build: () => [passing('a', 1)(), passing('b', 2)()] as const,
     })
@@ -234,14 +234,14 @@ describe('defineComposite — types (tsc-verified)', () => {
     })
   })
 
-  it('omits hidden keys from the declared contributions', () => {
+  it('omits internal keys from the declared contributions', () => {
     const composite = defineComposite({
       build: () => [passing('a', 1)(), passing('b', 2)()] as const,
       internal: ['a'],
     })
     composite(async (_req, ctx) => {
       const b: number = ctx.b
-      // @ts-expect-error — 'a' is hidden
+      // @ts-expect-error — 'a' is internal
       void ctx.a
       return Response.json({ b })
     })
@@ -341,7 +341,7 @@ describe('defineComposite — nested composites', () => {
     expect(await res.json()).toEqual({ a: 1, b: 2, c: 3 })
   })
 
-  it('keeps a key the inner composite hides hidden through the outer', async () => {
+  it('keeps a key the inner composite marks internal hidden through the outer', async () => {
     const inner = defineComposite({
       build: () => [passing('secret', 1)(), passing('shown', 2)()] as const,
       internal: ['secret'],
@@ -383,7 +383,7 @@ describe('defineComposite — nested composites', () => {
   })
 })
 
-describe('defineComposite — hidden keys are scoped, not deleted', () => {
+describe('defineComposite — internal keys are scoped, not deleted', () => {
   const upstreamAuth = passing('auth', 'from-upstream' as const)
 
   it('restores an upstream key of the same name, flat', async () => {
@@ -420,7 +420,7 @@ describe('defineComposite — hidden keys are scoped, not deleted', () => {
     })
   })
 
-  it('still strips a hidden key with no upstream counterpart', async () => {
+  it('still strips an internal key with no upstream counterpart', async () => {
     const app = pipeline([withAuth({ mode: 'none' })], async (_req, ctx) =>
       Response.json({ keys: Object.keys(ctx).sort() }),
     )

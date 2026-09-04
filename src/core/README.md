@@ -77,8 +77,8 @@ Two type-level guarantees:
 `defineComposite` builds one middleware out of several, deriving its
 contributions and prerequisites from its parts. Each part still contributes a
 single key, so the one-key rule holds; the composite is what lets a set of them
-ship and compose as a unit. `internal` marks a part's key as internal plumbing and
-strips it at the boundary. See the
+ship and compose as a unit. `internal` marks a part's key as plumbing and
+scopes it to the composite. See the
 [authoring guide](../../docs/authoring-guide.md#variant-bundling-middleware-into-one).
 
 ## Composition rules

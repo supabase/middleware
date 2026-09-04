@@ -1287,18 +1287,20 @@ itself is an implementation detail. `internal` says so:
 internal: ['auth']
 ```
 
-Internal keys are **stripped at the composite's boundary**, not merely omitted
-from the type — a downstream layer sees neither the type nor the value. Omitting
-only the type would make the declaration a lie and let internal plumbing shadow
-a same-named key belonging to a layer further down. Each name must be a key some
-part actually contributes, so `internal` cannot drift from `build`.
+Internal keys are **scoped to the composite** — stripped at its boundary, not
+merely omitted from the type. Both halves matter, in opposite directions:
+stripping keeps the composite's plumbing from leaking to a downstream layer that
+reads the same name, and where an _upstream_ layer already contributed that name,
+its value is restored on the way out, so marking a key internal can never make
+someone else's disappear.
 
-They are **scoped to the composite, not deleted from the stack.** If an upstream
-layer contributed a key under the same name, its value is restored on the way
-out, so marking a key internal can never make someone else's disappear. That has
-to happen at runtime: internal keys are absent from the composite's
-contributions, so neither `NoConflict` nor `ValidateEntries` sees them and the
-downstream _type_ keeps the upstream's value — the runtime matches it.
+The restore has to happen at runtime: internal keys are absent from the
+composite's contributions and so invisible to both `NoConflict` and
+`ValidateEntries`, which means the downstream _type_ keeps the upstream's
+value — this is what makes the runtime agree with it.
+
+Each name must be a key some part actually contributes, so `internal` cannot
+drift from `build`.
 
 This is what lets a composite present a flat public contract while using an
 intermediate key internally to carry state between its parts — the alternative

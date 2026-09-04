@@ -24,8 +24,8 @@ import type { AnyEntry, ConfigArgs, Entry } from './types.js'
 
 type AnyHandler = (req: Request, ctx: object) => Promise<Response>
 
-/** Upstream values for a composite's hidden keys, captured before its parts run. */
-type UpstreamHidden = Record<string, unknown>
+/** Upstream values for a composite's internal keys, captured before its parts run. */
+type UpstreamInternal = Record<string, unknown>
 
 /**
  * Fold a tuple of entries into the contributions record they collectively put
@@ -131,8 +131,9 @@ export interface Composite<
  * `build` receives the composite's config and returns the parts, outermost
  * first — the same order `pipeline` takes. The composite's contributions are
  * derived from the parts', so it publishes exactly the union of what they
- * contribute and **cannot over-declare**: naming a key no part supplies is a
- * compile error. Prerequisites are derived the same way — a part's `In` that an
+ * contribute. There is no argument for declaring a key, so a composite
+ * **cannot over-declare** — and `internal` may only name a key some part
+ * actually contributes. Prerequisites are derived the same way — a part's `In` that an
  * earlier part contributes is discharged internally, and anything outstanding
  * becomes the composite's own `In`.
  *
@@ -142,17 +143,17 @@ export interface Composite<
  *
  * @param spec.build - `(config) => readonly [...parts]`, outermost first. Return
  * the tuple `as const` so its length and order are visible to the types.
- * @param spec.internal - Keys that are internal plumbing rather than public API.
- * They are absent from the composite's declared contributions and stripped from
- * `ctx` at its boundary, so a downstream layer sees neither the type nor the
- * value. Each must be a key some part actually contributes.
+ * @param spec.internal - Keys that are plumbing rather than public API. They are
+ * absent from the composite's declared contributions and stripped from `ctx` at
+ * its boundary, so a downstream layer sees neither the type nor the value. Each
+ * must be a key some part actually contributes.
  *
- * Hidden keys are **scoped to the composite**, not deleted from the stack. A key
- * an upstream layer contributed under the same name is restored on the way out,
- * so hiding a key can never make someone else's disappear. That has to be done
- * at runtime: hidden keys are absent from `Contributes`, so neither
- * {@link NoConflict} nor `ValidateEntries` sees them, and the downstream type
- * keeps the upstream's value — the runtime now matches what the types say.
+ * They are **scoped to the composite, not deleted from the stack**: a key an
+ * upstream layer contributed under the same name is restored on the way out, so
+ * marking a key internal can never make someone else's vanish. Restoring has to
+ * happen at runtime, because internal keys are absent from `Contributes` and so
+ * invisible to both {@link NoConflict} and `ValidateEntries` — the downstream
+ * type keeps the upstream's value, and this is what makes the runtime agree.
  *
  * @example A composite with private plumbing
  * ```ts
@@ -160,7 +161,7 @@ export interface Composite<
  *
  * // `withGate` contributes the whole auth result at `ctx.auth`; the projections
  * // republish the individual keys the public contract promises. `auth` itself is
- * // an implementation detail, so it is hidden.
+ * // an implementation detail, so it is marked internal.
  * export const withAuth = defineComposite({
  *   build: (config: { mode: 'user' | 'none' }) =>
  *     [withGate(config), withMode(), withClaims()] as const,
@@ -183,12 +184,13 @@ export interface Composite<
 export function defineComposite<
   Config,
   const Entries extends readonly AnyEntry[],
-  const Hidden extends readonly (keyof Contributions<Entries> & string)[] = [],
+  const Internal extends readonly (keyof Contributions<Entries> & string)[] =
+    [],
 >(spec: {
   build: (config: Config) => Entries
-  internal?: Hidden
+  internal?: Internal
 }): Composite<
-  Omit<Contributions<Entries>, Hidden[number]>,
+  Omit<Contributions<Entries>, Internal[number]>,
   Config,
   Prerequisites<Entries>
 > {
@@ -210,24 +212,23 @@ export function defineComposite<
 
     const config = (args.length >= 2 ? args[0] : undefined) as Config
     const handler = lastArg as AnyHandler
-    const hidden = spec.internal ?? []
+    const internal = spec.internal ?? []
 
-    // Hidden keys are stripped at the boundary, not merely omitted from the
-    // type. Leaving the value on `ctx` would make the declaration a lie and let
-    // internal plumbing shadow a same-named key belonging to a downstream layer.
-    // Where the upstream contributed the same name, its value is put back: the
-    // key is scoped to this composite, not removed from the stack. The spread
-    // carries the context marker symbol, so the result is still a valid upstream
-    // context.
+    // Strip at the boundary rather than only omitting from the type, or the
+    // declaration would be a lie and this composite's plumbing would shadow a
+    // same-named key further down. Where the upstream had the name, put its
+    // value back: internal keys are scoped to the composite, not removed from
+    // the stack. The spread carries the context marker, so the result is still
+    // a valid upstream context.
     const boundary: AnyHandler =
-      hidden.length === 0
+      internal.length === 0
         ? handler
         : (req, ctx) => {
-            const carried = ctx as Record<symbol, UpstreamHidden | undefined>
+            const carried = ctx as Record<symbol, UpstreamInternal | undefined>
             const upstream = carried[snapshotKey]
             const visible = { ...ctx } as Record<string, unknown>
             delete (visible as Record<symbol, unknown>)[snapshotKey]
-            for (const key of hidden) {
+            for (const key of internal) {
               if (upstream && key in upstream) visible[key] = upstream[key]
               else delete visible[key]
             }
@@ -241,14 +242,14 @@ export function defineComposite<
       .reduceRight<AnyHandler>((h, entry) => entry(h), boundary)
 
     // Nothing to scope, so stay out of the way entirely.
-    if (hidden.length === 0) return folded
+    if (internal.length === 0) return folded
 
-    // Record what the upstream had under the hidden names before the parts run,
-    // so the boundary can restore it. The snapshot rides the context under a
-    // symbol unique to this composite: a closure would race across concurrent
-    // requests, and a shared symbol would let a nested composite clobber an
-    // enclosing one's snapshot. Symbols survive the `{ ...ctx }` merges each part
-    // performs and are invisible to `Object.keys` and to the type.
+    // Capture the upstream's values before the parts run, for the boundary to
+    // restore. The snapshot rides the context under a per-composite symbol: a
+    // closure would race across concurrent requests, and one shared symbol would
+    // let a nested composite consume an enclosing one's snapshot. Symbols
+    // survive each part's `{ ...ctx }` merge and stay invisible to
+    // `Object.keys` and to the type.
     return (req: Request, arg?: unknown, ...rest: unknown[]) => {
       const run = folded as (
         req: Request,
@@ -260,15 +261,15 @@ export function defineComposite<
       // context and buffer the request as it normally would.
       if (!isContext(arg)) return run(req, arg, ...rest)
       const upstream = arg as Record<string, unknown>
-      const snapshot: UpstreamHidden = {}
-      for (const key of hidden) {
+      const snapshot: UpstreamInternal = {}
+      for (const key of internal) {
         if (key in upstream) snapshot[key] = upstream[key]
       }
       return run(req, { ...arg, [snapshotKey]: snapshot })
     }
   }
   return callable as unknown as Composite<
-    Omit<Contributions<Entries>, Hidden[number]>,
+    Omit<Contributions<Entries>, Internal[number]>,
     Config,
     Prerequisites<Entries>
   >
