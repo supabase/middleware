@@ -404,11 +404,14 @@ describe('defineComposite — hidden keys are scoped, not deleted', () => {
   })
 
   it('restores an upstream key of the same name, nested', async () => {
+    // `satisfies FetchHandler` anchors the outermost call, which is what the
+    // docs ask for and what keeps the cascade overload (rather than
+    // propagation) selected at the TypeScript floor.
     const app = upstreamAuth(
       withAuth({ mode: 'none' }, async (_req, ctx) =>
         Response.json({ auth: ctx.auth, keys: Object.keys(ctx).sort() }),
       ),
-    )
+    ) satisfies FetchHandler
 
     const res = await app(new Request('http://localhost/'))
     expect(await res.json()).toEqual({
