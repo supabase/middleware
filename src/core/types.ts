@@ -88,13 +88,25 @@ export interface Entry<
  * `SingleKeyEntry<'supabase', {}, SupabaseClient>` is the one-key record
  * `Entry<{ supabase: SupabaseClient }>`, spelled without the braces.
  *
- * @remarks
- * A shorthand for *annotations*. Do not use it as the declared return type of a
- * middleware's config-only call signature — a generic alias there defeats the
- * `const Entries` tuple inference {@link defineComposite} performs on its
- * `build` result, collapsing every part's contributions to the constraint.
- * Declare that position as `Entry<{ [K in Key]: Contribution }, In>`, which is
- * what {@link Middleware} does.
+ * Use it wherever you name an entry type — most often the return type of a
+ * wrapper that threads a generic through a middleware, which is the common
+ * reason to write the type out at all:
+ *
+ * ```ts
+ * export function withThing<Database = unknown>(
+ *   config?: WithThingConfig,
+ * ): SingleKeyEntry<'thing', Record<never, never>, Client<Database>> {
+ *   return base(config) as unknown as SingleKeyEntry<
+ *     'thing',
+ *     Record<never, never>,
+ *     Client<Database>
+ *   >
+ * }
+ * ```
+ *
+ * An entry declared this way composes normally, {@link defineComposite}
+ * included: the mapped type resolves as soon as `Key` is a literal, which it is
+ * at every call site.
  *
  * @category Types
  */

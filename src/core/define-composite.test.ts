@@ -484,3 +484,59 @@ describe('defineComposite — hidden keys are scoped, not deleted', () => {
     expect(await res.json()).toEqual({ symbols: 1 })
   })
 })
+
+describe('defineComposite — parts declared with SingleKeyEntry', () => {
+  // The shape a wrapper writes to thread a generic through a middleware. It has
+  // to compose like any other part; the shorthand is only unsafe where `Key` is
+  // still a deferred parameter, which is never true at a call site.
+  interface FakeClient<Database> {
+    db: Database
+  }
+  const base = defineMiddleware<
+    'thing',
+    void,
+    Record<never, never>,
+    FakeClient<unknown>
+  >({ key: 'thing', run: () => async () => ({ thing: { db: null } }) })
+
+  function withThing<Database = unknown>(): SingleKeyEntry<
+    'thing',
+    Record<never, never>,
+    FakeClient<Database>
+  > {
+    return base() as unknown as SingleKeyEntry<
+      'thing',
+      Record<never, never>,
+      FakeClient<Database>
+    >
+  }
+
+  it('contributes its key, typed through the generic', async () => {
+    const composite = defineComposite({
+      build: () => [withThing<{ tag: 'db' }>(), passing('other', 1)()] as const,
+    })
+
+    const handler = composite(async (_req, ctx) => {
+      const db: { tag: 'db' } = ctx.thing.db
+      const other: number = ctx.other
+      return Response.json({ db, other })
+    }) satisfies FetchHandler
+
+    const res = await handler(new Request('http://localhost/'))
+    expect(await res.json()).toEqual({ db: null, other: 1 })
+  })
+
+  it('can be marked internal, so `Contributions` resolved its key', async () => {
+    const composite = defineComposite({
+      build: () => [withThing(), passing('other', 1)()] as const,
+      internal: ['thing'],
+    })
+
+    const handler = composite(async (_req, ctx) =>
+      Response.json({ keys: Object.keys(ctx).sort() }),
+    ) satisfies FetchHandler
+
+    const res = await handler(new Request('http://localhost/'))
+    expect(await res.json()).toEqual({ keys: ['other'] })
+  })
+})

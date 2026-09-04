@@ -437,11 +437,17 @@ export interface Middleware<
     >
   ): Produced<Base & Omit<Ctx, Key>, In & Omit<Ctx, Key>>
   // Config-only call — `mw(config)` (or `mw()` for config-less) returns an
-  // Entry for use in a `pipeline` array. Declared as `Entry` directly rather
-  // than through the `SingleKeyEntry` shorthand: a generic alias in this
-  // position defeats the `const Entries` tuple inference `defineComposite`
-  // performs on its `build` result, collapsing every part's contributions to
-  // the constraint. Falls through from the handler overload
+  // Entry for use in a `pipeline` array.
+  //
+  // Spelled out rather than via the `SingleKeyEntry` shorthand, and it has to
+  // be. `Key` and `Contribution` are still this interface's own parameters
+  // here, so any indirection over `Entry` — alias or interface, both tried —
+  // leaves a deferred mapped type that `Contributions` cannot infer through
+  // when `defineComposite` folds its `build` result: every part's contributions
+  // collapse to the constraint, and the visible symptom is a composite's
+  // `internal` list failing because `keyof Contributions<Entries>` became
+  // `never`. Concrete instantiations are unaffected, so the shorthand is safe
+  // everywhere a caller names a key literally. Falls through from the handler overload
   // because config-only calls either have the wrong arity (required-config mw)
   // or pass a non-function (which doesn't match MiddlewareArgs' Handler slot).
   (...args: ConfigArgs<Config>): Entry<{ [K in Key]: Contribution }, In>
