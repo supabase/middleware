@@ -18,10 +18,14 @@
  */
 
 import type { NoConflict } from './define-middleware.js'
+import { isContext } from './runtime.js'
 import type { BaseContext } from './runtime.js'
-import type { AnyEntry, ConfigArgs, EntryOf } from './types.js'
+import type { AnyEntry, ConfigArgs, Entry } from './types.js'
 
 type AnyHandler = (req: Request, ctx: object) => Promise<Response>
+
+/** Upstream values for a composite's hidden keys, captured before its parts run. */
+type UpstreamHidden = Record<string, unknown>
 
 /**
  * Fold a tuple of entries into the contributions record they collectively put
@@ -30,7 +34,7 @@ type AnyHandler = (req: Request, ctx: object) => Promise<Response>
 export type Contributions<
   Entries extends readonly AnyEntry[],
   Ctx = Record<never, never>,
-> = Entries extends readonly [EntryOf<infer C, object>, ...infer Rest]
+> = Entries extends readonly [Entry<infer C, object>, ...infer Rest]
   ? Rest extends readonly AnyEntry[]
     ? Contributions<Rest, Ctx & C>
     : Ctx
@@ -48,7 +52,7 @@ export type Prerequisites<
   Entries extends readonly AnyEntry[],
   Ctx = Record<never, never>,
   Need = Record<never, never>,
-> = Entries extends readonly [EntryOf<infer C, infer In>, ...infer Rest]
+> = Entries extends readonly [Entry<infer C, infer In>, ...infer Rest]
   ? Rest extends readonly AnyEntry[]
     ? Prerequisites<Rest, Ctx & C, Need & Omit<In, keyof Ctx>>
     : Need
@@ -118,7 +122,7 @@ export interface Composite<
     In & Omit<Ctx, keyof Contributes>
   >
   // Config-only call — returns the Entry for a `pipeline` array.
-  (...args: ConfigArgs<Config>): EntryOf<Contributes, In>
+  (...args: ConfigArgs<Config>): Entry<Contributes, In>
 }
 
 /**
@@ -138,10 +142,17 @@ export interface Composite<
  *
  * @param spec.build - `(config) => readonly [...parts]`, outermost first. Return
  * the tuple `as const` so its length and order are visible to the types.
- * @param spec.hide - Keys that are internal plumbing rather than public API.
- * They are stripped from `ctx` at the composite's boundary and absent from its
- * declared contributions, so a downstream layer sees neither the type nor the
+ * @param spec.internal - Keys that are internal plumbing rather than public API.
+ * They are absent from the composite's declared contributions and stripped from
+ * `ctx` at its boundary, so a downstream layer sees neither the type nor the
  * value. Each must be a key some part actually contributes.
+ *
+ * Hidden keys are **scoped to the composite**, not deleted from the stack. A key
+ * an upstream layer contributed under the same name is restored on the way out,
+ * so hiding a key can never make someone else's disappear. That has to be done
+ * at runtime: hidden keys are absent from `Contributes`, so neither
+ * {@link NoConflict} nor `ValidateEntries` sees them, and the downstream type
+ * keeps the upstream's value — the runtime now matches what the types say.
  *
  * @example A composite with private plumbing
  * ```ts
@@ -153,7 +164,7 @@ export interface Composite<
  * export const withAuth = defineComposite({
  *   build: (config: { mode: 'user' | 'none' }) =>
  *     [withGate(config), withMode(), withClaims()] as const,
- *   hide: ['auth'],
+ *   internal: ['auth'],
  * })
  *
  * // Nested, or flat — one declaration serves both.
@@ -175,12 +186,16 @@ export function defineComposite<
   const Hidden extends readonly (keyof Contributions<Entries> & string)[] = [],
 >(spec: {
   build: (config: Config) => Entries
-  hide?: Hidden
+  internal?: Hidden
 }): Composite<
   Omit<Contributions<Entries>, Hidden[number]>,
   Config,
   Prerequisites<Entries>
 > {
+  // One marker per composite, so a nested composite cannot overwrite the
+  // snapshot an enclosing one is relying on.
+  const snapshotKey = Symbol('@supabase/middleware:composite-hidden')
+
   const callable = (...args: unknown[]) => {
     const lastArg = args[args.length - 1]
 
@@ -195,27 +210,62 @@ export function defineComposite<
 
     const config = (args.length >= 2 ? args[0] : undefined) as Config
     const handler = lastArg as AnyHandler
-    const hidden = spec.hide ?? []
+    const hidden = spec.internal ?? []
 
     // Hidden keys are stripped at the boundary, not merely omitted from the
     // type. Leaving the value on `ctx` would make the declaration a lie and let
     // internal plumbing shadow a same-named key belonging to a downstream layer.
-    // The spread carries the context marker symbol, so the result is still a
-    // valid upstream context.
+    // Where the upstream contributed the same name, its value is put back: the
+    // key is scoped to this composite, not removed from the stack. The spread
+    // carries the context marker symbol, so the result is still a valid upstream
+    // context.
     const boundary: AnyHandler =
       hidden.length === 0
         ? handler
         : (req, ctx) => {
+            const carried = ctx as Record<symbol, UpstreamHidden | undefined>
+            const upstream = carried[snapshotKey]
             const visible = { ...ctx } as Record<string, unknown>
-            for (const key of hidden) delete visible[key]
+            delete (visible as Record<symbol, unknown>)[snapshotKey]
+            for (const key of hidden) {
+              if (upstream && key in upstream) visible[key] = upstream[key]
+              else delete visible[key]
+            }
             return handler(req, visible)
           }
 
     // The same fold `pipeline` performs. Parts each merge their own key, so a
     // composite needs no multi-key merge of its own.
-    return spec
+    const folded = spec
       .build(config)
       .reduceRight<AnyHandler>((h, entry) => entry(h), boundary)
+
+    // Nothing to scope, so stay out of the way entirely.
+    if (hidden.length === 0) return folded
+
+    // Record what the upstream had under the hidden names before the parts run,
+    // so the boundary can restore it. The snapshot rides the context under a
+    // symbol unique to this composite: a closure would race across concurrent
+    // requests, and a shared symbol would let a nested composite clobber an
+    // enclosing one's snapshot. Symbols survive the `{ ...ctx }` merges each part
+    // performs and are invisible to `Object.keys` and to the type.
+    return (req: Request, arg?: unknown, ...rest: unknown[]) => {
+      const run = folded as (
+        req: Request,
+        ctx?: unknown,
+        ...rest: unknown[]
+      ) => Promise<Response>
+      // At an entry call there is no upstream to preserve, and passing the
+      // platform argument through untouched is what lets the first part seed the
+      // context and buffer the request as it normally would.
+      if (!isContext(arg)) return run(req, arg, ...rest)
+      const upstream = arg as Record<string, unknown>
+      const snapshot: UpstreamHidden = {}
+      for (const key of hidden) {
+        if (key in upstream) snapshot[key] = upstream[key]
+      }
+      return run(req, { ...arg, [snapshotKey]: snapshot })
+    }
   }
   return callable as unknown as Composite<
     Omit<Contributions<Entries>, Hidden[number]>,

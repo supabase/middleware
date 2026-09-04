@@ -27,7 +27,7 @@ import {
   defineMiddleware,
   pipeline,
 } from '@supabase/middleware'
-import type { FetchHandler } from '@supabase/middleware'
+import type { Entry, FetchHandler, SingleKeyEntry } from '@supabase/middleware'
 import { withCors } from '@supabase/middleware/cors'
 import { withFeatureFlag } from '@supabase/middleware/feature-flag'
 
@@ -141,7 +141,7 @@ const withMode = defineMiddleware<
 
 const withAuth = defineComposite({
   build: (config: { mode: string }) => [withGate(config), withMode()] as const,
-  hide: ['auth'],
+  internal: ['auth'],
 })
 
 // Nested: the composite's public key reaches the handler, and an upstream key
@@ -173,11 +173,11 @@ const _compHidden = withAuth({ mode: 'user' }, async (_req, ctx) => {
 })
 void _compHidden
 
-// `hide` can only name a key some part actually contributes.
+// `internal` can only name a key some part actually contributes.
 defineComposite({
   build: () => [withA()] as const,
   // @ts-expect-error — 'nope' is contributed by no part
-  hide: ['nope'],
+  internal: ['nope'],
 })
 
 // A composite's key collides with the upstream context just as a single key does.
@@ -194,3 +194,23 @@ const _compUnmet =
   // @ts-expect-error — nothing contributes 'alpha', so `ctx` stays required
   _compNeeds(innerOk) satisfies FetchHandler
 void _compUnmet
+
+// --- `Entry` spellings ------------------------------------------------------
+// The record form is the type; `SingleKeyEntry` is the one-key shorthand. Both
+// must resolve to the same thing at the floor.
+const _record: Entry<{ alpha: { v: number } }> = withA()
+void _record
+const _single: SingleKeyEntry<
+  'alpha',
+  Record<never, never>,
+  { v: number }
+> = withA()
+void _single
+
+// A string first argument is a constraint violation, not a silently empty
+// contribution. This is the negative that matters: the two-argument spelling
+// used to resolve to a `never` contribution and push a bogus conflict onto the
+// *next* entry instead of failing here.
+// @ts-expect-error — 'alpha' is not an object; use SingleKeyEntry or a record
+type _Bad = Entry<'alpha', Record<never, never>>
+void 0 as unknown as _Bad

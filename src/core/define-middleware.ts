@@ -146,7 +146,7 @@ export function defineMiddleware<
           req: Request,
           ctx: object,
         ) => Promise<Response>
-      return wrap as Entry<Key, In, Contribution>
+      return wrap as Entry<{ [K in Key]: Contribution }, In>
     }
 
     // Handler call — last arg is a function.
@@ -437,8 +437,12 @@ export interface Middleware<
     >
   ): Produced<Base & Omit<Ctx, Key>, In & Omit<Ctx, Key>>
   // Config-only call — `mw(config)` (or `mw()` for config-less) returns an
-  // Entry for use in a `pipeline` array. Falls through from the handler overload
+  // Entry for use in a `pipeline` array. Declared as `Entry` directly rather
+  // than through the `SingleKeyEntry` shorthand: a generic alias in this
+  // position defeats the `const Entries` tuple inference `defineComposite`
+  // performs on its `build` result, collapsing every part's contributions to
+  // the constraint. Falls through from the handler overload
   // because config-only calls either have the wrong arity (required-config mw)
   // or pass a non-function (which doesn't match MiddlewareArgs' Handler slot).
-  (...args: ConfigArgs<Config>): Entry<Key, In, Contribution>
+  (...args: ConfigArgs<Config>): Entry<{ [K in Key]: Contribution }, In>
 }

@@ -6,9 +6,9 @@ import { pipeline } from './pipeline.js'
 import type {
   Conflict,
   Contributions,
-  Entry,
   FetchHandler,
   NoConflict,
+  SingleKeyEntry,
 } from '../index.js'
 
 const innerOk = async () => Response.json({ ok: true })
@@ -56,7 +56,7 @@ const withClaims = defineMiddleware<
 const withAuth = defineComposite({
   build: (config: { mode: 'user' | 'none' }) =>
     [withGate(config), withMode(), withClaims()] as const,
-  hide: ['auth'],
+  internal: ['auth'],
 })
 
 const authed = () =>
@@ -218,8 +218,8 @@ describe('defineComposite — types (tsc-verified)', () => {
   it('derives contributions as the union of its parts', () => {
     type C = Contributions<
       readonly [
-        Entry<'a', Record<never, never>, 1>,
-        Entry<'b', Record<never, never>, 2>,
+        SingleKeyEntry<'a', Record<never, never>, 1>,
+        SingleKeyEntry<'b', Record<never, never>, 2>,
       ]
     >
     const _ok: C = { a: 1, b: 2 }
@@ -230,14 +230,14 @@ describe('defineComposite — types (tsc-verified)', () => {
     defineComposite({
       build: () => [passing('a', 1)()] as const,
       // @ts-expect-error — 'nope' is contributed by no part
-      hide: ['nope'],
+      internal: ['nope'],
     })
   })
 
   it('omits hidden keys from the declared contributions', () => {
     const composite = defineComposite({
       build: () => [passing('a', 1)(), passing('b', 2)()] as const,
-      hide: ['a'],
+      internal: ['a'],
     })
     composite(async (_req, ctx) => {
       const b: number = ctx.b
@@ -344,7 +344,7 @@ describe('defineComposite — nested composites', () => {
   it('keeps a key the inner composite hides hidden through the outer', async () => {
     const inner = defineComposite({
       build: () => [passing('secret', 1)(), passing('shown', 2)()] as const,
-      hide: ['secret'],
+      internal: ['secret'],
     })
     const outer = defineComposite({ build: () => [inner()] as const })
 
@@ -380,5 +380,104 @@ describe('defineComposite — nested composites', () => {
       innerOk,
     )
     void handler
+  })
+})
+
+describe('defineComposite — hidden keys are scoped, not deleted', () => {
+  const upstreamAuth = passing('auth', 'from-upstream' as const)
+
+  it('restores an upstream key of the same name, flat', async () => {
+    const app = pipeline(
+      [upstreamAuth(), withAuth({ mode: 'none' })],
+      async (_req, ctx) => {
+        // The type says the upstream value survives; so must the runtime.
+        const still: 'from-upstream' = ctx.auth
+        return Response.json({ still, keys: Object.keys(ctx).sort() })
+      },
+    )
+
+    const res = await app(new Request('http://localhost/'))
+    expect(await res.json()).toEqual({
+      still: 'from-upstream',
+      keys: ['auth', 'authMode', 'claims'],
+    })
+  })
+
+  it('restores an upstream key of the same name, nested', async () => {
+    const app = upstreamAuth(
+      withAuth({ mode: 'none' }, async (_req, ctx) =>
+        Response.json({ auth: ctx.auth, keys: Object.keys(ctx).sort() }),
+      ),
+    )
+
+    const res = await app(new Request('http://localhost/'))
+    expect(await res.json()).toEqual({
+      auth: 'from-upstream',
+      keys: ['auth', 'authMode', 'claims'],
+    })
+  })
+
+  it('still strips a hidden key with no upstream counterpart', async () => {
+    const app = pipeline([withAuth({ mode: 'none' })], async (_req, ctx) =>
+      Response.json({ keys: Object.keys(ctx).sort() }),
+    )
+
+    const res = await app(new Request('http://localhost/'))
+    expect(await res.json()).toEqual({ keys: ['authMode', 'claims'] })
+  })
+
+  it('scopes the composite’s own value while its parts run', async () => {
+    // Inside the composite the parts must see the gate's `auth`, not the
+    // upstream's — that is what the projections read.
+    const app = pipeline(
+      [upstreamAuth(), withAuth({ mode: 'none' })],
+      async (_req, ctx) =>
+        Response.json({ mode: ctx.authMode, auth: ctx.auth }),
+    )
+
+    const res = await app(new Request('http://localhost/'))
+    expect(await res.json()).toEqual({ mode: 'none', auth: 'from-upstream' })
+  })
+
+  it('keeps each level’s snapshot separate when composites nest and both mark internals', async () => {
+    const inner = defineComposite({
+      build: () =>
+        [passing('shared', 'inner' as const)(), passing('a', 1)()] as const,
+      internal: ['shared'],
+    })
+    const outer = defineComposite({
+      build: () =>
+        [
+          inner(),
+          passing('shared', 'outer' as const)(),
+          passing('b', 2)(),
+        ] as const,
+      internal: ['shared'],
+    })
+
+    const app = pipeline(
+      [passing('shared', 'upstream' as const)(), outer()],
+      async (_req, ctx) =>
+        Response.json({ shared: ctx.shared, keys: Object.keys(ctx).sort() }),
+    )
+
+    const res = await app(new Request('http://localhost/'))
+    // Both levels restore, so the upstream value reaches the handler intact.
+    expect(await res.json()).toEqual({
+      shared: 'upstream',
+      keys: ['a', 'b', 'shared'],
+    })
+  })
+
+  it('leaves no snapshot marker on the context', async () => {
+    const app = pipeline(
+      [upstreamAuth(), withAuth({ mode: 'none' })],
+      async (_req, ctx) =>
+        Response.json({ symbols: Object.getOwnPropertySymbols(ctx).length }),
+    )
+
+    const res = await app(new Request('http://localhost/'))
+    // Only the engine's own context marker remains.
+    expect(await res.json()).toEqual({ symbols: 1 })
   })
 })

@@ -1243,7 +1243,7 @@ import { defineComposite } from '@supabase/middleware'
 export const withAuth = defineComposite({
   build: (config: { mode: 'user' | 'none' }) =>
     [withGate(config), withMode(), withClaims()] as const,
-  hide: ['auth'],
+  internal: ['auth'],
 })
 ```
 
@@ -1277,21 +1277,28 @@ hold:
 - **Collisions** are checked per key, so a composite conflicts with an upstream
   context that already carries any one of its keys.
 
-### `hide` — keys that are plumbing, not API
+### `internal` — keys that are plumbing, not API
 
 The gate above contributes the whole auth result at `ctx.auth`, and the
 projections republish the individual keys the public contract promises. `auth`
-itself is an implementation detail. `hide` says so:
+itself is an implementation detail. `internal` says so:
 
 ```ts
-hide: ['auth']
+internal: ['auth']
 ```
 
-Hidden keys are **stripped at the composite's boundary**, not merely omitted
+Internal keys are **stripped at the composite's boundary**, not merely omitted
 from the type — a downstream layer sees neither the type nor the value. Omitting
 only the type would make the declaration a lie and let internal plumbing shadow
 a same-named key belonging to a layer further down. Each name must be a key some
-part actually contributes, so `hide` cannot drift from `build`.
+part actually contributes, so `internal` cannot drift from `build`.
+
+They are **scoped to the composite, not deleted from the stack.** If an upstream
+layer contributed a key under the same name, its value is restored on the way
+out, so marking a key internal can never make someone else's disappear. That has
+to happen at runtime: internal keys are absent from the composite's
+contributions, so neither `NoConflict` nor `ValidateEntries` sees them and the
+downstream _type_ keeps the upstream's value — the runtime matches it.
 
 This is what lets a composite present a flat public contract while using an
 intermediate key internally to carry state between its parts — the alternative

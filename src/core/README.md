@@ -77,7 +77,7 @@ Two type-level guarantees:
 `defineComposite` builds one middleware out of several, deriving its
 contributions and prerequisites from its parts. Each part still contributes a
 single key, so the one-key rule holds; the composite is what lets a set of them
-ship and compose as a unit. `hide` marks a part's key as internal plumbing and
+ship and compose as a unit. `internal` marks a part's key as internal plumbing and
 strips it at the boundary. See the
 [authoring guide](../../docs/authoring-guide.md#variant-bundling-middleware-into-one).
 
@@ -141,7 +141,7 @@ export default {
 | Export                                      | Description                                                                                                                                                                                                                                                 |
 | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pipeline(entries, handler)`                | Compose a flat array of entries around a handler. Returns a `FetchHandler`.                                                                                                                                                                                 |
-| `Entry<Key, In, Contribution>`              | Type produced by `mw(config)`. Carries phantom types for `pipeline`'s accumulation.                                                                                                                                                                         |
+| `Entry<Contributes, In>`                    | Type produced by `mw(config)`. Carries a key-to-type record of contributions as a phantom, for `pipeline`'s accumulation. `SingleKeyEntry<Key, In, Contribution>` is the one-key shorthand.                                                                 |
 | `defineMiddleware(spec)`                    | Author helper: declare a middleware. Returns a `(config, handler)` callable.                                                                                                                                                                                |
 | `FetchHandler`                              | The type of a stack handed to the host (the `fetch` export, `Deno.serve(app)`, …). Required for collision detection in nested handlers; also rejects a stack whose `In` prerequisite nobody supplied. Prerequisites between layers are enforced without it. |
 | `Conflict<Key>`                             | Sentinel string the handler parameter resolves to when a middleware would shadow an upstream key.                                                                                                                                                           |

@@ -20,7 +20,7 @@
 
 import type { IsAny } from './define-middleware.js'
 import type { BaseContext, FetchHandler } from './runtime.js'
-import type { AnyEntry, Conflict, EntryOf, Widened } from './types.js'
+import type { AnyEntry, Conflict, Entry, Widened } from './types.js'
 
 type AnyHandler = (req: Request, ctx: object) => Promise<Response>
 
@@ -32,7 +32,7 @@ type AnyHandler = (req: Request, ctx: object) => Promise<Response>
 type Accumulate<
   Entries extends readonly AnyEntry[],
   Ctx,
-> = Entries extends readonly [EntryOf<infer C, object>, ...infer Rest]
+> = Entries extends readonly [Entry<infer C, object>, ...infer Rest]
   ? Rest extends readonly AnyEntry[]
     ? Accumulate<Rest, Ctx & C>
     : Ctx
@@ -76,7 +76,7 @@ type Unmet<In, Ctx> = Extract<Exclude<keyof In, keyof Ctx>, string>
 export type ValidateEntries<
   Entries extends readonly unknown[],
   Ctx = BaseContext,
-> = Entries extends readonly [EntryOf<infer C, infer In>, ...infer Rest]
+> = Entries extends readonly [Entry<infer C, infer In>, ...infer Rest]
   ? IsAny<Ctx> extends true
     ? ValidateEntries<Rest, Ctx & C>
     : [Duplicated<C, Ctx>] extends [never]

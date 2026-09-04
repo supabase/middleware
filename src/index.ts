@@ -42,5 +42,5 @@ export type {
   Conflict,
   ContributedKeys,
   Entry,
-  EntryOf,
+  SingleKeyEntry,
 } from './core/types.js'

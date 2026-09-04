@@ -7,7 +7,7 @@ import type { NoConflict } from './define-middleware.js'
 import { pipeline } from './pipeline.js'
 import type { BaseContext, FetchHandler } from './runtime.js'
 import { getEnv, seedContext } from './runtime.js'
-import type { Conflict, Entry } from './types.js'
+import type { Conflict, SingleKeyEntry } from './types.js'
 
 const innerOk = async () => Response.json({ ok: true })
 
@@ -581,7 +581,7 @@ describe('auto-curry: mw(config) returns an Entry', () => {
       run: (config) => async () => ({ greeting: { hello: config.who } }),
     })
 
-    const _entry = withGreeting({ who: 'world' }) satisfies Entry<
+    const _entry = withGreeting({ who: 'world' }) satisfies SingleKeyEntry<
       'greeting',
       Record<never, never>,
       { hello: string }
@@ -592,7 +592,7 @@ describe('auto-curry: mw(config) returns an Entry', () => {
   it('type guarantee: mw() satisfies Entry for config-less middleware', () => {
     const withTag = passing('tag', { v: 'ok' })
 
-    const _entry = withTag() satisfies Entry<
+    const _entry = withTag() satisfies SingleKeyEntry<
       'tag',
       Record<never, never>,
       { v: string }

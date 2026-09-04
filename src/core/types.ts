@@ -52,13 +52,12 @@ type AnyFetchHandler = (req: Request, ctx: object) => Promise<Response>
  * contributes a single key and so has a single-entry record; a composite built
  * with {@link defineComposite} carries one entry per part.
  *
- * Prefer the {@link Entry} alias, which spells the common single-key case as
- * `Entry<'flag', {}, boolean>` and the record case as `Entry<{ flag: boolean }>`.
+ * {@link SingleKeyEntry} spells the one-key case without the braces.
  *
  * @remarks
  * `__contributes` is an optional phantom, so **any** `(handler) => handler`
- * structurally satisfies any `EntryOf`. Annotating a hand-written function with
- * a record it does not actually produce compiles, and the keys type as present
+ * structurally satisfies any `Entry`. Annotating a hand-written function with a
+ * record it does not actually produce compiles, and the keys type as present
  * while being `undefined` at runtime. Nothing here can catch that: the phantom
  * has to stay optional, because it never exists as a value.
  *
@@ -67,13 +66,13 @@ type AnyFetchHandler = (req: Request, ctx: object) => Promise<Response>
  * over-declaring is impossible, since there is no place to name a key. The
  * guarantee is a property of the constructor, not of this type. Declare
  * multi-key contributions by building the thing with `defineComposite`; reach
- * for a bare `EntryOf` annotation only to describe a function you did not write
+ * for a bare `Entry` annotation only to describe a function you did not write
  * (wrapping third-party middleware), and treat the annotation as an assertion
  * you are responsible for.
  *
  * @category Types
  */
-export interface EntryOf<
+export interface Entry<
   Contributes extends object,
   In extends object = Record<never, never>,
 > {
@@ -83,6 +82,29 @@ export interface EntryOf<
 }
 
 /**
+ * An {@link Entry} contributing exactly one key — what {@link defineMiddleware}
+ * produces.
+ *
+ * `SingleKeyEntry<'supabase', {}, SupabaseClient>` is the one-key record
+ * `Entry<{ supabase: SupabaseClient }>`, spelled without the braces.
+ *
+ * @remarks
+ * A shorthand for *annotations*. Do not use it as the declared return type of a
+ * middleware's config-only call signature — a generic alias there defeats the
+ * `const Entries` tuple inference {@link defineComposite} performs on its
+ * `build` result, collapsing every part's contributions to the constraint.
+ * Declare that position as `Entry<{ [K in Key]: Contribution }, In>`, which is
+ * what {@link Middleware} does.
+ *
+ * @category Types
+ */
+export type SingleKeyEntry<
+  Key extends string,
+  In extends object = Record<never, never>,
+  Contribution = unknown,
+> = Entry<{ [K in Key]: Contribution }, In>
+
+/**
  * The keys a contributions record puts on `ctx`, or the key itself when a
  * single literal key is given.
  */
@@ -90,37 +112,13 @@ export type ContributedKeys<KeyOrContributes> = KeyOrContributes extends string
   ? KeyOrContributes
   : Extract<keyof KeyOrContributes, string>
 
-/**
- * An {@link EntryOf} in either spelling.
- *
- * - **Record form** — `Entry<{ supabase: SupabaseClient; jwtClaims: Claims }>`.
- *   One entry per contributed key. This is what a composite declares.
- * - **Single-key form** — `Entry<'supabase', {}, SupabaseClient>`. Shorthand for
- *   a middleware contributing one key, which is what {@link defineMiddleware}
- *   produces; resolves to the record `{ supabase: SupabaseClient }`.
- *
- * The two are told apart by whether the third argument is supplied, so a
- * middleware whose contribution is genuinely `never` must use the record form
- * (`Entry<{ k: never }>`) — the single-key form reads a `never` third argument
- * as "not supplied".
- *
- * @category Types
- */
-export type Entry<
-  KeyOrContributes extends string | object,
-  In extends object = Record<never, never>,
-  Contribution = never,
-> = [Contribution] extends [never]
-  ? EntryOf<KeyOrContributes & object, In>
-  : EntryOf<{ [K in KeyOrContributes & string]: Contribution }, In>
-
 /** Any entry, for use as a constraint. */
-export type AnyEntry = EntryOf<object, object>
+export type AnyEntry = Entry<object, object>
 
 /**
  * True when a contributions record has a string index signature rather than
  * literal keys — a *widened* entry, typically one hand-wrapped as
- * `Entry<string, object, unknown>` instead of produced by `defineMiddleware`.
+ * `Entry<Record<string, unknown>>` instead of produced by `defineMiddleware`.
  *
  * Its key set is unknown, so a collision check against it cannot be meaningful:
  * every key would appear to be both contributed and in conflict. Conflict
