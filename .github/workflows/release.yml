@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release-please:
+  release:
     runs-on: ubuntu-latest
     steps:
       # Generate a short-lived token from the GitHub App
@@ -34,28 +34,70 @@ jobs:
         with:
           token: ${{ steps.generate-token.outputs.token }}
 
-      # --- Everything below only runs when a release is created ---
-
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        if: ${{ steps.release.outputs.release_created }}
         with:
+          fetch-depth: 0
           persist-credentials: false
+
+      # Determine what to publish:
+      #   - If a release was created: publish the release version under the "latest" tag
+      #   - If a release PR is pending: publish an RC version under the "rc" tag
+      #   - Otherwise: skip the rest of the job
+      - name: Determine version
+        id: version
+        env:
+          RELEASE_CREATED: ${{ steps.release.outputs.release_created }}
+          RELEASE_VERSION: ${{ steps.release.outputs.major }}.${{ steps.release.outputs.minor }}.${{ steps.release.outputs.patch }}
+          PR_HEAD_BRANCH: ${{ steps.release.outputs.pr && fromJSON(steps.release.outputs.pr).headBranchName }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+
+          if [ "$RELEASE_CREATED" == "true" ]; then
+            VERSION="$RELEASE_VERSION"
+            TAG="latest"
+          else
+            if [ -z "$PR_HEAD_BRANCH" ]; then
+              echo "skip=true" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+
+            # Validate branch name to prevent git ref injection
+            if [[ ! "$PR_HEAD_BRANCH" =~ ^[A-Za-z0-9._/-]+$ ]] || \
+               [[ "$PR_HEAD_BRANCH" =~ \.\.|//|@\{|^-|/$ ]]; then
+              echo "Invalid PR_HEAD_BRANCH: $PR_HEAD_BRANCH"
+              exit 1
+            fi
+
+            git fetch origin "refs/heads/$PR_HEAD_BRANCH"
+            NEXT_VERSION=$(git show "FETCH_HEAD:package.json" | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version")
+
+            if [[ ! "$NEXT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Invalid version in PR branch package.json: $NEXT_VERSION"
+              exit 1
+            fi
+
+            VERSION="${NEXT_VERSION}-rc.${RUN_NUMBER}"
+            TAG="rc"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
 
       - name: Setup pnpm
         uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6.0.5
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ steps.version.outputs.skip != 'true' }}
 
       - name: Setup Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ steps.version.outputs.skip != 'true' }}
         with:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
 
       # Install latest npm in a user-writable prefix to avoid permission issues
       - name: Install latest npm
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ steps.version.outputs.skip != 'true' }}
         run: |
           mkdir -p "$HOME/.npm-global"
           npm config set prefix "$HOME/.npm-global"
@@ -64,21 +106,31 @@ jobs:
           npm --version
 
       - name: Install dependencies
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ steps.version.outputs.skip != 'true' }}
         run: pnpm install --frozen-lockfile
 
+      # Stamp the RC version into package.json (no-op for real releases,
+      # since release-please already wrote the bumped version there)
+      - name: Stamp version
+        if: ${{ steps.version.outputs.skip != 'true' }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: npm version "$VERSION" --no-git-tag-version --allow-same-version
+
       - name: Build
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ steps.version.outputs.skip != 'true' }}
         run: pnpm build
 
       # Publish to npm using OIDC trusted publishing (no npm token needed)
       - name: Publish to npm
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ steps.version.outputs.skip != 'true' }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
           set -euo pipefail
 
           # Idempotency guard: skip if this version is already on npm
-          VERSION=$(node -p "require('./package.json').version")
           NPM_VIEW_STDERR=$(mktemp)
           EXISTING=$(npm view "@supabase/middleware@$VERSION" version 2>"$NPM_VIEW_STDERR") || STATUS=$?
           if [ -n "$EXISTING" ]; then
@@ -92,8 +144,24 @@ jobs:
           fi
           rm -f "$NPM_VIEW_STDERR"
 
-          npm publish --access public --provenance
+          npm publish --access public --provenance --tag "$TAG"
 
+      # JSR has no pre-release channel, so only real releases go there.
+      # Runs after the npm publish above and doesn't fail the job, so a
+      # JSR-side failure can never take down or mask an npm release.
       - name: Publish to JSR
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ steps.version.outputs.tag == 'latest' }}
+        continue-on-error: true
         run: npx jsr@0.14.3 publish --allow-dirty
+
+      # Create a GitHub pre-release for RC versions
+      - name: Create GitHub pre-release
+        if: ${{ steps.version.outputs.tag == 'rc' }}
+        env:
+          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "middleware-v$VERSION" \
+            --title "middleware-v$VERSION" \
+            --generate-notes \
+            --prerelease
