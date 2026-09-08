@@ -217,7 +217,7 @@ the host, so handle what you can describe.
 
 ### Client init and `getEnv` timing
 
-Read configuration through `getEnv` (rule 2) — never `process.env`, `Deno.env`,
+Read configuration through `getEnv` ([rule 2](#rules)) — never `process.env`, `Deno.env`,
 or a Workers bindings object. That is what keeps a middleware portable. But
 `getEnv` has one timing constraint that decides _where_ you can call it.
 
@@ -797,8 +797,8 @@ reference scaffold — it is public, and every file above has a counterpart in i
 
 ### CI
 
-Four of these five steps are the ones you would write anyway. The fifth is the
-one nobody adds unaided:
+Four of these six steps are the ones you would write anyway. The last two are
+the ones nobody gets right unaided:
 
 ```yaml
 # .github/workflows/ci.yml
@@ -832,12 +832,30 @@ jobs:
 
       - name: Typecheck a consumer against the published types at the floor
         run: pnpm typecheck:consumer
+
+      # Match import specifiers, not the bare string `node:`. A doc comment that
+      # mentions `node:events` trips the naive grep on a clean tree.
+      - name: Assert no node: imports in this package's own source
+        run: |
+          if grep -rnE "(from|import|require)\s*\(?\s*['\"]node:" src/; then
+            echo "node: import found in src/"
+            exit 1
+          fi
 ```
 
-The last step is a fixture outside your workspace that pins the floor version of
-`tsc` and compiles a consumer against your built `.d.ts`. It is what keeps the
-`>=5.4` you declared honest: if you later reach for a newer intrinsic, this is
-where you find out, rather than a consumer finding out for you.
+The consumer step is a fixture outside your workspace that pins the floor
+version of `tsc` and compiles a consumer against your built `.d.ts`. It is what
+keeps the `>=5.4` you declared honest: if you later reach for a newer intrinsic,
+this is where you find out, rather than a consumer finding out for you.
+
+The grep step checks [rule 7](#rules), no `node:*` imports in your own files.
+The obvious version, `grep -rn "node:" src/`, also
+matches comments, so the first doc comment that mentions `node:events` fails
+the build. Matching only import statements avoids that and still catches
+`import { EventEmitter } from 'node:events'`, `require('node:fs')`, and a
+dynamic `import('node:path')`. It looks at your own files only, which is what
+the rule covers; see [wrapping a vendor SDK](#variant-wrapping-a-vendor-sdk)
+for what to do when a dependency needs `node:*`.
 
 `test/ts-floor/package.json` — unlabeled, because unlike `tsconfig.json` a
 `package.json` is strict JSON and a comment makes it unparseable:
@@ -1276,8 +1294,10 @@ Consumers import `withRequestLog` and see only the interface. Export it from
 `src/index.ts` the way §2 exports `withValidatedBody`, and export the
 `WithRequestLog` type too, so the published `.d.ts` can name it.
 
-### Four rules
+### Four rules for the signature
 
+These are specific to hand-written signatures, separate from the guide's
+[rules](#rules) for every middleware.
 [`@supabase/middleware-openfeature`](https://github.com/supabase/middleware-openfeature)
 was built against this guide, and its signature got three of these wrong on the
 first pass. The type tests at the end of this variant pin each one.
@@ -1459,8 +1479,134 @@ pipeline(
 ) satisfies FetchHandler
 ```
 
-P7 is the case rule 1 protects. N6 is the `TS2769` row of rule 4's table, and
-N3 in §3 is the `TS2345` row.
+P7 is the case rule 1 of the
+[four rules for the signature](#four-rules-for-the-signature) protects. N6 is
+the `TS2769` row of rule 4's table, and N3 in §3 is the `TS2345` row.
+
+## Variant: wrapping a vendor SDK
+
+Most vendor SDKs import from `node:*`. The OpenFeature server SDK, the client
+behind the LaunchDarkly, PostHog, Statsig, Flagsmith, DevCycle and Vercel flag
+providers, runs `import { EventEmitter } from 'node:events'` at module load.
+[Rule 7](#rules) forbids that in your own files, and adding the SDK to `dependencies`
+only moves the problem into `node_modules`.
+
+The way out is to not depend on the SDK at all. Three moves:
+
+1. **Declare the client structurally.** Name the methods your middleware calls
+   in an interface you own. The vendor's real client already has them, so it
+   satisfies the interface with no adapter code.
+2. **Take only types from the vendor.** If the vendor ships a core package
+   with the types and no runtime (`@openfeature/core` is one), depend on it for
+   `import type` and nothing else. If it does not, write the few types you
+   need yourself.
+3. **Let the consumer own the SDK.** They install it, construct the client,
+   and hand it to your middleware through config. Their runtime carries the
+   `node:*` import, not your package.
+
+```ts
+// src/with-flags.ts
+import { defineMiddleware } from '@supabase/middleware'
+import type { Middleware } from '@supabase/middleware'
+
+/**
+ * The slice of a flag provider's client this middleware calls. Declared here,
+ * structurally, so any SDK whose client has this method fits as-is and the SDK
+ * itself never becomes a dependency of this package.
+ */
+export interface FlagClient {
+  getBooleanValue(flagKey: string, defaultValue: boolean): Promise<boolean>
+}
+
+/** Per-instance configuration for {@link withFlags}. */
+export interface WithFlagsConfig {
+  /** The consumer's own provider client. */
+  client: FlagClient
+  /** Flag keys to resolve on every request, each with its default. */
+  flags: Record<string, boolean>
+}
+
+/** Shape contributed at `ctx.flags`. */
+export interface FlagsContribution {
+  /** Resolved value per declared flag key. */
+  values: Record<string, boolean>
+}
+
+/** Resolves the declared flags through the consumer's client. */
+export const withFlags: Middleware<
+  'flags',
+  WithFlagsConfig,
+  Record<never, never>,
+  FlagsContribution
+> = defineMiddleware<
+  'flags',
+  WithFlagsConfig,
+  Record<never, never>,
+  FlagsContribution
+>({
+  key: 'flags',
+  run: (config) => async () => {
+    const entries = await Promise.all(
+      Object.entries(config.flags).map(
+        async ([key, fallback]) =>
+          [key, await config.client.getBooleanValue(key, fallback)] as const,
+      ),
+    )
+    return { flags: { values: Object.fromEntries(entries) } }
+  },
+})
+```
+
+Export it from `src/index.ts` like the others. On the consumer's side:
+
+```ts
+import { OpenFeature } from '@openfeature/server-sdk'
+import { pipeline } from '@supabase/middleware'
+import { withFlags } from '@acme/middleware-validated-body'
+
+// Their dependency, `node:events` and all. `Client` has `getBooleanValue`, so
+// it is a `FlagClient` as-is.
+const client = OpenFeature.getClient()
+
+export default {
+  fetch: pipeline(
+    [withFlags({ client, flags: { betaCheckout: false } })],
+    async (_req, ctx) => Response.json(ctx.flags.values),
+  ),
+}
+```
+
+Pin the structural claim with a type test, so a vendor release that changes the
+method's signature fails your CI and not a consumer's build:
+
+```ts
+import type { Client } from '@openfeature/server-sdk'
+import type { FlagClient } from '../src/with-flags.js'
+
+declare const real: Client
+const _structural: FlagClient = real
+void _structural
+```
+
+That test is the one place the vendor SDK appears in your repository, as a
+`devDependency`.
+
+The pattern buys two things beyond [rule 7](#rules). The structural client accepts any
+SDK version whose method still matches, so a vendor pin elsewhere in the
+consumer's tree is not your problem: `@vercel/flags-core@1.7.1` requires
+`@openfeature/server-sdk` at exactly `1.18.0`, and one build of the middleware
+works against `1.18.0` and `1.23.0` alike. And a consumer who does not use the
+vendor at all implements the interface in a few lines.
+
+What the `node:*` import costs the consumer is a per-host question, not a
+blanket one. `@openfeature/server-sdk` loads on Deno and on the Supabase Edge
+Runtime; Cloudflare Workers needs the `nodejs_compat` flag. Say so in your
+README rather than leaving the dependency implicit.
+
+[`@supabase/middleware-openfeature`](https://github.com/supabase/middleware-openfeature)
+is the shipped instance of this pattern: a four-method `FlagClient`, a
+types-only dependency on `@openfeature/core`, and the structural type test
+above against the real `Client`.
 
 ## Variant: the response seam
 
@@ -1549,7 +1695,7 @@ built-in worked example: it answers preflight with a `return` before the
 
 ## Variant: bundling middleware into one
 
-Rule 1 keeps a middleware to one key. Some units of behavior genuinely own
+[Rule 1](#rules) keeps a middleware to one key. Some units of behavior genuinely own
 several: `withSupabase` in `@supabase/server` establishes `supabase`,
 `supabaseAdmin`, `jwtClaims`, `userClaims`, `authMode` and `authKeyName`, and
 callers want to reach for it as one thing rather than assemble six.
@@ -1625,7 +1771,7 @@ drift from `build`.
 
 This is what lets a composite present a flat public contract while using an
 intermediate key internally to carry state between its parts — the alternative
-being a side channel keyed on the request, which rule 3 exists to prevent.
+being a side channel keyed on the request, which [rule 3](#rules) exists to prevent.
 
 ### Runtime
 
@@ -1654,8 +1800,11 @@ as any other nested stack.
    produce itself. Default to a plain `async` `run`.
 6. **MUST** pick a key that is unique in a stack. If a consumer might reasonably
    apply your middleware twice, expose a key override in its config.
-7. **NEVER** import from `node:*`. Web Fetch APIs only, so the middleware runs
-   on Deno, Cloudflare Workers, Bun, and Node alike.
+7. **NEVER** import from `node:*` in your middleware's own files. Use Web Fetch
+   APIs only, so it loads on Deno, Cloudflare Workers, Bun, and Node alike.
+   Dependencies are a separate question. If a vendor SDK needs `node:*`, keep
+   it out of your `dependencies`: the consumer installs it and passes its
+   client in. See [wrapping a vendor SDK](#variant-wrapping-a-vendor-sdk).
 8. **MUST** return a `Response` to short-circuit, rather than throwing. A
    `Response` is not an error — it can carry any status. This is about rejecting
    **requests**. Surfacing **misconfiguration** — a missing API key, an
