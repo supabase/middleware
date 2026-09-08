@@ -2,6 +2,7 @@ node_modules
 dist
 pnpm-lock.yaml
 test/ts-floor/pnpm-lock.yaml
+test/runtimes/workers/pnpm-lock.yaml
 
 # Generated and owned by release-please. Reformatting it here would fight the
 # release automation, which appends in its own style on every release.

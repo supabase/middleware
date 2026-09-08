@@ -1,0 +1,17 @@
+{
+  "name": "workers-runtime-fixture",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Runs the built dist inside workerd. Not part of the pnpm workspace — it pins its own vitest and the Workers pool.",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@supabase/middleware": "link:../../.."
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "vitest": "^4.1.0"
+  }
+}
