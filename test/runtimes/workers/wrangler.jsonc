@@ -1,0 +1,8 @@
+{
+  "name": "wm-runtime-fixture",
+  "main": "worker.ts",
+  "compatibility_date": "2025-09-01",
+  "vars": {
+    "WM_RUNTIME_TEST": "from-binding",
+  },
+}

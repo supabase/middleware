@@ -51,3 +51,77 @@ jobs:
 
       - name: Verify JSR packaging
         run: pnpm dlx jsr@0.14.3 publish --dry-run --allow-dirty
+
+  # The vitest suite above runs on Node only. Each job below serves a real
+  # `pipeline` from the built dist on one of the other runtimes the package
+  # targets and asserts runtime detection, env resolution, and that the host's
+  # platform argument never reaches `ctx`. Fixtures live in test/runtimes/.
+  deno:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6.0.5
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: v2.x
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm build
+
+      - name: Serve the built dist on Deno
+        run: pnpm test:deno
+
+  bun:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6.0.5
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: latest
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm build
+
+      - name: Serve the built dist on Bun
+        run: pnpm test:bun
+
+  workers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6.0.5
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm build
+
+      # workerd runs locally through @cloudflare/vitest-pool-workers; the
+      # fixture pins its own vitest because the pool requires a newer major.
+      - name: Serve the built dist inside workerd
+        run: pnpm test:workers
