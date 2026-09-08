@@ -1026,10 +1026,9 @@ export interface WithRequestLogConfig<Base extends BaseContext = BaseContext> {
 ```
 
 and publish a hand-written signature over the ordinary `defineMiddleware`
-runtime — the pattern the
-[`NoConflict` docblock](../src/core/define-middleware.ts) sanctions. Writing
-that overload set correctly is its own topic; what matters here is what your
-consumers then see, because the two composition forms are not equivalent.
+runtime. [The next variant](#variant-a-hand-written-signature) writes that
+signature out in full. This one covers what your consumers then see, because
+the two composition forms are not equivalent.
 
 **Nesting types it automatically.** There is nothing to annotate:
 
@@ -1140,6 +1139,328 @@ Nothing else about the `pipeline` form is affected. Composition, ordering,
 prerequisites and handler typing all work at full fidelity with nothing
 annotated — the handler's `ctx` above sees both keys either way — and a config
 callback that does not read upstream context needs no annotation in either form.
+
+## Variant: a hand-written signature
+
+`Middleware<Key, Config, In, Contribution>` has four type parameters. A
+middleware that needs one more writes its own signature. The case above is the
+usual one: a config callback that reads the accumulated upstream needs `Base`
+in scope where `config` is checked. A `Payload` parameter for a parsed body is
+another.
+
+The split is the same every time. The runtime is an ordinary `defineMiddleware`
+call, with the extra parameter erased to its constraint, so it keeps context
+seeding, request buffering and contribution extraction. The published type is
+an interface with the engine's three call forms written out, and the value is
+cast to it. The [`NoConflict` docblock](../src/core/define-middleware.ts)
+sanctions this.
+
+The runtime:
+
+```ts
+// src/with-request-log.ts
+import { defineMiddleware } from '@supabase/middleware'
+import type { BaseContext, Middleware } from '@supabase/middleware'
+
+/** Per-instance configuration for {@link withRequestLog}. */
+export interface WithRequestLogConfig<Base extends BaseContext = BaseContext> {
+  /** Receives one line per request, before the handler runs. */
+  log: (line: Record<string, unknown>) => void
+  /** Extra fields, read off the request and the accumulated upstream context. */
+  fields?: (req: Request, ctx: Base) => Record<string, unknown>
+}
+
+/** Shape contributed at `ctx.requestLog`. */
+export interface RequestLogContribution {
+  /** Always `true`: the line reached `log` before the handler ran. */
+  logged: true
+}
+
+/**
+ * The runtime, with `Base` erased to its constraint. `defineMiddleware` gives
+ * it context seeding, request buffering and contribution extraction; the
+ * published signature that threads `Base` through `fields` is in
+ * `with-request-log-types.ts`, and this value is cast to it there.
+ */
+export const withRequestLogRuntime: Middleware<
+  'requestLog',
+  WithRequestLogConfig,
+  Record<never, never>,
+  RequestLogContribution
+> = defineMiddleware<
+  'requestLog',
+  WithRequestLogConfig,
+  Record<never, never>,
+  RequestLogContribution
+>({
+  key: 'requestLog',
+  run: (config) => async (req, ctx) => {
+    config.log({
+      method: req.method,
+      url: req.url,
+      ...config.fields?.(req, ctx),
+    })
+    return { requestLog: { logged: true } }
+  },
+})
+```
+
+The signature:
+
+```ts
+// src/with-request-log-types.ts
+import type {
+  BaseContext,
+  NoConflict,
+  SingleKeyEntry,
+} from '@supabase/middleware'
+
+import { withRequestLogRuntime } from './with-request-log.js'
+import type {
+  RequestLogContribution,
+  WithRequestLogConfig,
+} from './with-request-log.js'
+
+/**
+ * The published signature of {@link withRequestLog}: the engine's three call
+ * forms, hand-written so `Base` is in scope where `config` is checked.
+ */
+export interface WithRequestLog {
+  // 1. Cascade. `Base` flows inward from the contextual type of this call's
+  //    return, which is what types the `ctx` of `fields` with no annotation.
+  //    `NoInfer` on the handler's `ctx` keeps that the only source of `Base`.
+  <Base extends BaseContext = BaseContext>(
+    config: WithRequestLogConfig<Base>,
+    handler: NoConflict<
+      'requestLog',
+      Base,
+      (
+        req: Request,
+        ctx: NoInfer<Base> & { requestLog: RequestLogContribution },
+      ) => Promise<Response>
+    >,
+  ): (req: Request, ctx?: Base) => Promise<Response>
+  // 2. Propagation. Reached only when the cascade fails: an unanchored stack
+  //    whose handler declares an upstream key this layer does not contribute.
+  //    `Ctx` is read off that handler and republished minus this layer's key.
+  <
+    Base extends BaseContext = BaseContext,
+    Ctx extends BaseContext & { requestLog?: RequestLogContribution } =
+      BaseContext,
+  >(
+    config: WithRequestLogConfig<Base>,
+    handler: NoConflict<
+      'requestLog',
+      Base,
+      (req: Request, ctx: Ctx) => Promise<Response>
+    >,
+  ): (req: Request, ctx: Base & Omit<Ctx, 'requestLog'>) => Promise<Response>
+  // 3. Config-only. An `Entry` for a `pipeline` array. `config` is never
+  //    wrapped in `NoInfer` here: a parameter annotation on `fields` is the
+  //    only way `Base` can arrive in this form.
+  <Base extends BaseContext = BaseContext>(
+    config: WithRequestLogConfig<Base>,
+  ): SingleKeyEntry<'requestLog', Record<never, never>, RequestLogContribution>
+}
+
+/**
+ * Log one line per request and contribute `{ logged: true }` at
+ * `ctx.requestLog`. The runtime and this type agree by construction: both
+ * contribute `RequestLogContribution` under the key `requestLog`.
+ */
+export const withRequestLog: WithRequestLog =
+  withRequestLogRuntime as unknown as WithRequestLog
+```
+
+Consumers import `withRequestLog` and see only the interface. Export it from
+`src/index.ts` the way §2 exports `withValidatedBody`, and export the
+`WithRequestLog` type too, so the published `.d.ts` can name it.
+
+### Four rules
+
+[`@supabase/middleware-openfeature`](https://github.com/supabase/middleware-openfeature)
+was built against this guide, and its signature got three of these wrong on the
+first pass. The type tests at the end of this variant pin each one.
+
+**1. Write all three signatures, in the engine's order: cascade, propagation,
+config-only.** The propagation form is the one to skip by mistake. It reads as
+being about prerequisites, and this middleware declares none. It is about the
+prerequisites of the **wrapped handler**. A handler that declares an upstream
+key this layer does not contribute, composed with no anchor, has to pass that
+requirement outward, and only the propagation form can carry it. With the
+cascade and config-only forms alone, P7 below fails:
+
+```
+TS2345: Argument of type '(_req: Request, ctx: { validatedBody: ValidatedBodyContribution;
+requestLog: RequestLogContribution; }) => Promise<Response>' is not assignable to
+parameter of type '(req: Request, ctx: object & { requestLog: RequestLogContribution; }) =>
+Promise<Response>'.
+  Property 'validatedBody' is missing in type '{ requestLog: RequestLogContribution; }'
+```
+
+A two-signature interface compiles every other example in this guide and
+breaks on the first consumer who composes it unanchored.
+
+**2. `NoInfer` goes on the handler's `ctx`, and nowhere else.** There it keeps
+the contextual return type the only source of `Base`, so the cascade survives
+past two layers; the `Middleware` interface in
+[`define-middleware.ts`](../src/core/define-middleware.ts) explains why. On
+`config` in the config-only signature it closes the one channel the `pipeline`
+form has. The parameter annotation in P4 stops supplying `Base`, the entry no
+longer matches, and the callback fails with:
+
+```
+Type '(_r: Request, ctx: { validatedBody: ValidatedBodyContribution; }) => { body: unknown; }'
+is not assignable to type '(req: Request, ctx: object) => Record<string, unknown>'.
+  Property 'validatedBody' is missing in type '{}'
+```
+
+**3. `NoConflict` wraps every signature that takes a handler.** One left
+unguarded accepts the call the guarded one rejected, resolves its own `Base` to
+something unusable, and reports the error on the enclosing call instead of the
+one at fault.
+
+**4. The diagnostic code of a collision depends on the shape of the overload
+set.** The sentinel text is stable. The code around it is not:
+
+| Signatures that take a handler | Collision diagnostic                                 |
+| ------------------------------ | ---------------------------------------------------- |
+| one (`pipeline`, N3 in §3)     | `TS2345`, sentinel on the top-level line             |
+| two or more (N6 below)         | `TS2769`, sentinel inside the per-overload breakdown |
+
+Two consequences for negative type tests. Match the sentinel text, not only the
+code. And fold `tsc`'s continuation lines into the diagnostic before matching,
+or the harness cannot see the sentinel at all under `TS2769`. The harness in §3
+does both.
+
+### Type tests
+
+Add these cases to the files from §3. `positive.ts` needs three more imports:
+
+```ts
+import { withRequestLog } from '../src/with-request-log-types.js'
+import type { RequestLogContribution } from '../src/with-request-log.js'
+import type { ValidatedBodyContribution } from '../src/with-validated-body.js'
+
+const log = (_line: Record<string, unknown>) => {}
+
+// P3 — nesting: `fields` sees the upstream with no annotation, and the
+// handler sees both the upstream and this layer's contribution.
+withValidatedBody(
+  { validate: () => true },
+  withRequestLog(
+    { log, fields: (_r, ctx) => ({ body: ctx.validatedBody.data }) },
+    async (_req, ctx) => {
+      const _l: true = ctx.requestLog.logged
+      const _d: unknown = ctx.validatedBody.data
+      return Response.json({ _l, _d })
+    },
+  ),
+) satisfies FetchHandler
+
+// P4 — pipeline, `fields` reads upstream: one parameter annotation supplies
+// `Base`, since the config expression is checked before `pipeline` sees it.
+pipeline(
+  [
+    withValidatedBody({ validate: () => true }),
+    withRequestLog({
+      log,
+      fields: (_r, ctx: { validatedBody: ValidatedBodyContribution }) => ({
+        body: ctx.validatedBody.data,
+      }),
+    }),
+  ],
+  async (_req, ctx) =>
+    Response.json({
+      logged: ctx.requestLog.logged,
+      data: ctx.validatedBody.data,
+    }),
+) satisfies FetchHandler
+
+// P5 — pipeline, `fields` ignores upstream: nothing to annotate.
+pipeline(
+  [
+    withValidatedBody({ validate: () => true }),
+    withRequestLog({
+      log,
+      fields: (req) => ({ ua: req.headers.get('user-agent') }),
+    }),
+  ],
+  async (_req, ctx) => Response.json({ logged: ctx.requestLog.logged }),
+) satisfies FetchHandler
+
+// P6 — standalone: `In` is empty, so the produced stack is a `fetch` export.
+withRequestLog({ log }, async (_req, ctx) =>
+  Response.json({ logged: ctx.requestLog.logged }),
+) satisfies FetchHandler
+
+// P7 — propagation: the handler declares an upstream key this layer does not
+// contribute, and the stack has no anchor. Only the second signature accepts
+// this; the requirement travels outward and the contributor discharges it.
+const _p7 = withRequestLog(
+  { log },
+  async (
+    _req,
+    ctx: {
+      validatedBody: ValidatedBodyContribution
+      requestLog: RequestLogContribution
+    },
+  ): Promise<Response> =>
+    Response.json({
+      data: ctx.validatedBody.data,
+      logged: ctx.requestLog.logged,
+    }),
+)
+withValidatedBody({ validate: () => true }, _p7) satisfies FetchHandler
+```
+
+`negative.ts` needs one:
+
+```ts
+import { withRequestLog } from '../src/with-request-log-types.js'
+
+const log = (_line: Record<string, unknown>) => {}
+
+// N4 — nesting: the `ctx` of `fields` is the real upstream, not `any`.
+// @expect-error TS2339 Property 'nope' does not exist on type
+withValidatedBody(
+  { validate: () => true },
+  withRequestLog(
+    { log, fields: (_r, ctx) => ({ nope: ctx.nope }) },
+    async () => new Response(),
+  ),
+) satisfies FetchHandler
+
+// N5 — pipeline: `fields` reads upstream with no annotation. The documented
+// limit, pinned so the guide and the compiler cannot drift apart.
+// @expect-error TS2339 Property 'validatedBody' does not exist on type 'object'
+pipeline(
+  [
+    withValidatedBody({ validate: () => true }),
+    withRequestLog({ log, fields: (_r, ctx) => ({ body: ctx.validatedBody }) }),
+  ],
+  async (_req, ctx) => Response.json({ logged: ctx.requestLog.logged }),
+) satisfies FetchHandler
+
+// N6 — a duplicate key is reported against THIS call and names the key. Two
+// signatures take a handler, so the diagnostic is TS2769 and the sentinel sits
+// in the per-overload breakdown.
+// @expect-error TS2769 middleware-conflict: key 'requestLog' is already present on the upstream context
+withRequestLog(
+  { log },
+  withRequestLog({ log }, async () => new Response()),
+) satisfies FetchHandler
+
+// N7 — the pipeline handler's `ctx` is real accumulation, not `any`.
+// @expect-error TS2339 Property 'nope' does not exist on type
+pipeline(
+  [withValidatedBody({ validate: () => true }), withRequestLog({ log })],
+  async (_req, ctx) => Response.json({ nope: ctx.nope }),
+) satisfies FetchHandler
+```
+
+P7 is the case rule 1 protects. N6 is the `TS2769` row of rule 4's table, and
+N3 in §3 is the `TS2345` row.
 
 ## Variant: the response seam
 
