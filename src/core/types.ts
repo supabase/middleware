@@ -22,10 +22,15 @@
  * `ctx?: undefined`); the collision is never named, and the colliding key may
  * not appear at all. Keep the sentinel on a parameter.
  *
- * The two paths differ only in how much surrounds the message: `pipeline` is a
- * single signature and reports a one-line TS2345, while `Middleware` is an
- * overload set and reports TS2769 with the sentinel on the first line of the
- * per-overload breakdown.
+ * The two paths differ only in how much surrounds the message, and that is
+ * decided by how many signatures at the call site can take a handler. One
+ * handler-taking signature (`pipeline`, or a hand-written signature with a
+ * single handler form) reports a one-line TS2345 with the sentinel on that
+ * line. Two or more (`Middleware`, whose cascade and propagation forms both
+ * take a handler) reports TS2769, with the sentinel inside the indented
+ * per-overload breakdown. A test that checks a collision should match the
+ * sentinel text rather than the code, and fold continuation lines when it
+ * parses `tsc` output.
  *
  * @category Types
  */
