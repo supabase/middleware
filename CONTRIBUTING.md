@@ -121,6 +121,8 @@ root README in the same commit.
 
 The full authoring guide — `defineMiddleware`, request-side and generator forms, tests, publishing, and composing alongside the built-in entries — is in [`docs/authoring-guide.md`](./docs/authoring-guide.md). The composition primitives (`ctx` shape, conflict & prerequisite enforcement, the response seam) are documented in [`src/core/README.md`](./src/core/README.md), with [`feature-flag`](./src/middleware/feature-flag/README.md) and [`cors`](./src/middleware/cors/README.md) as worked examples.
 
+Decide where it lives first. Middleware that needs Supabase and works with zero configuration belongs in [`@supabase/server`](https://github.com/supabase/server). Everything else is its own package. This repository ships the composition primitives and two worked examples (`cors` and `feature-flag`) and takes no new middleware; the authoring guide's [Where it lives](./docs/authoring-guide.md#where-it-lives) section has the reasoning.
+
 To add a middleware **to this repository** (rather than publish your own package), see [`src/middleware/README.md`](./src/middleware/README.md) for the directory layout and subpath wiring.
 
 ## Submitting Changes

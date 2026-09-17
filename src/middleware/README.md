@@ -18,6 +18,14 @@ repository**.
 
 ## Adding a built-in
 
+The built-ins are worked examples of the primitives, one per side:
+`feature-flag` for the request side and `cors` for the response seam. New
+middleware does not land here. Middleware that needs Supabase and works with
+zero configuration goes in [`@supabase/server`](https://github.com/supabase/server);
+anything else is its own package. See
+[Where it lives](../../docs/authoring-guide.md#where-it-lives) in the authoring
+guide. The layout below applies to changes to the two existing built-ins.
+
 Mirror [`feature-flag/`](./feature-flag/README.md):
 
 ```

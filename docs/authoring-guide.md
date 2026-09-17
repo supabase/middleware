@@ -66,6 +66,33 @@ concern is genuinely two-sided — stamping headers on the way out, timing,
 request-spanning cleanup. If you are only _producing_ a response, do it in the
 handler instead.
 
+### Where it lives
+
+Decide this before the first line. Two questions place any middleware.
+
+- Does it need Supabase? Keys, environment variables, a database connection, or
+  Supabase API surface.
+- Does it work with zero configuration? Installed and composed, it does the
+  right thing on Supabase Edge Functions with no options.
+
+Yes to both, and it belongs in [`@supabase/server`](https://github.com/supabase/server),
+next to `withSupabase`, `withSupabaseClient`, `withPostgresClient`, and
+`withOAuthProtectedResource`. Open a PR there; its `CONTRIBUTING.md` covers the
+layout.
+
+No Supabase surface, and it is its own package under your own scope, which is
+the path the rest of this guide walks. That holds for middleware Supabase
+publishes as much as for anyone else's:
+[`@supabase-labs/middleware-openfeature`](https://github.com/supabase/middleware-openfeature)
+is one.
+
+This repository ships the composition primitives and two worked examples,
+`withCors` and `withFeatureFlag`. It takes no new middleware.
+
+Naming follows placement. The `with` prefix means middleware: composable,
+chainable, and never the last entry in a chain. A handler resolves the request
+instead of passing it on, and takes no prefix.
+
 ## 1. The middleware
 
 `defineMiddleware` takes four type parameters and a spec of `{ key, run }`:
@@ -688,7 +715,7 @@ entrypoint lives; `tsdown.config.ts` decides where the build actually puts it.
     "typecheck:consumer": "pnpm --dir test/ts-floor install --ignore-workspace && pnpm --dir test/ts-floor exec tsc --noEmit"
   },
   "dependencies": {
-    "@supabase/middleware": "^0.3.0"
+    "@supabase/middleware": "^0.5.0"
   },
   "devDependencies": {
     "tsdown": "^0.20.3",
