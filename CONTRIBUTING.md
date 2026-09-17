@@ -11,6 +11,7 @@ Thank you for your interest in contributing to `@supabase/middleware`! This docu
 - [Code Style](#code-style)
 - [Writing a middleware](#writing-a-middleware)
 - [Submitting Changes](#submitting-changes)
+- [Release Process](#release-process)
 - [Questions?](#questions)
 - [License](#license)
 
@@ -86,6 +87,28 @@ Watch mode:
 
 ```bash
 pnpm test:watch
+```
+
+### Cross-runtime tests
+
+CI also runs `pipeline` from the built `dist` on Deno, Bun, and Cloudflare's `workerd`. Those jobs check runtime detection, environment resolution, and that the host's platform argument never reaches `ctx`. The fixtures live in [`test/runtimes/`](./test/runtimes) and import the built output, so build first.
+
+```bash
+pnpm build
+pnpm test:deno     # needs Deno 2.x
+pnpm test:bun      # needs Bun
+pnpm test:workers  # workerd through @cloudflare/vitest-pool-workers; the fixture installs its own vitest
+```
+
+### Packaging checks
+
+After the build, CI loads the published entrypoints in plain Node, checks the type exports with `attw`, and dry-runs a JSR publish. All three run locally:
+
+```bash
+pnpm build
+pnpm smoke                                           # every entrypoint loads in raw Node
+pnpm check-exports                                   # arethetypeswrong against the packed tarball
+pnpm dlx jsr@0.14.3 publish --dry-run --allow-dirty  # slow types and the jsr.json payload
 ```
 
 ## Code Style
@@ -174,6 +197,31 @@ docs: clarify prerequisite enforcement
 - Update documentation if you change public APIs.
 - Add tests for new functionality.
 - Ensure all CI checks pass.
+
+## Release Process
+
+Releases are automated with [release-please](https://github.com/googleapis/release-please). Versions and `CHANGELOG.md` come from the conventional commit history, so no PR edits either by hand.
+
+### How it works
+
+1. Commits land on `main` with conventional commit messages (see above).
+2. release-please opens or updates a release PR that bumps the version in `package.json` and `jsr.json` and writes the changelog entry.
+3. While that PR is open, every push to `main` publishes a release candidate to npm as `<next version>-rc.<run>` under the `rc` dist-tag, with a matching GitHub pre-release. Install it with `npm install @supabase/middleware@rc`.
+4. A maintainer merges the release PR. The workflow publishes the release to npm under `latest` with provenance through OIDC trusted publishing, then to [JSR](https://jsr.io/@supabase/middleware). JSR has no pre-release channel, so only real releases go there, and a JSR failure never blocks the npm release.
+
+### Version bumps
+
+The package is pre-1.0 and release-please runs with `bump-minor-pre-major`:
+
+- **Breaking change** (`feat!:`, `fix!:`, or a `BREAKING CHANGE:` footer): minor bump
+- **`feat:`**: minor bump
+- **`fix:`**: patch bump
+
+`docs:`, `test:`, and `chore:` commits do not trigger a release on their own.
+
+### Preview builds
+
+Every pull request publishes a preview build through [pkg.pr.new](https://pkg.pr.new) when it is opened, on each push, and when a label is added. The install command lands as a comment on the PR, so a change can be tried before it merges.
 
 ## Questions?
 
