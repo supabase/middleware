@@ -106,8 +106,8 @@ After the build, CI loads the published entrypoints in plain Node, checks the ty
 
 ```bash
 pnpm build
-pnpm smoke                                         # every entrypoint loads in raw Node
-pnpm check-exports                                 # arethetypeswrong against the packed tarball
+pnpm smoke                                           # every entrypoint loads in raw Node
+pnpm check-exports                                   # arethetypeswrong against the packed tarball
 pnpm dlx jsr@0.14.3 publish --dry-run --allow-dirty  # slow types and the jsr.json payload
 ```
 
