@@ -20,12 +20,12 @@ export default {
 
 ## Config
 
-| Field          | Type                                                                               | Description                                                                        |
-| -------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `name`         | `string`                                                                           | Recorded in `ctx.featureFlag.name` and the default rejection body.                 |
-| `evaluate`     | `(req) => boolean \| FeatureFlagVerdict \| Promise<boolean \| FeatureFlagVerdict>` | Decide whether the flag is enabled for this request.                               |
-| `rejectStatus` | `number?`                                                                          | Status when the flag rejects. Default `404` (soft reveal).                         |
-| `rejectBody`   | `unknown?`                                                                         | Body when the flag rejects. Default `{ error: 'feature_disabled', flag: <name> }`. |
+| Field          | Type                                                                                    | Description                                                                                  |
+| -------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `name`         | `string`                                                                                | Recorded in `ctx.featureFlag.name` and the default rejection body.                           |
+| `evaluate`     | `(req, ctx) => boolean \| FeatureFlagVerdict \| Promise<boolean \| FeatureFlagVerdict>` | Decide whether the flag is enabled for this request. `ctx` holds the upstream contributions. |
+| `rejectStatus` | `number?`                                                                               | Status when the flag rejects. Default `404` (soft reveal).                                   |
+| `rejectBody`   | `unknown?`                                                                              | Body when the flag rejects. Default `{ error: 'feature_disabled', flag: <name> }`.           |
 
 ## Returning richer verdicts
 
@@ -47,6 +47,28 @@ Then the handler reads:
 ctx.featureFlag.variant // 'a' | 'b' | 'control' | null
 ctx.featureFlag.payload // anything you returned
 ```
+
+## Targeting the verified caller
+
+`evaluate` receives the context accumulated by the entries placed before it. A flag composed after an auth middleware can read the caller that middleware verified, with no second lookup of its own.
+
+```ts
+pipeline(
+  [
+    withUser(),
+    withFeatureFlag({
+      name: 'beta-checkout',
+      evaluate: (_req, ctx) => {
+        const { user } = ctx as { user?: { id: string } }
+        return user !== undefined && betaTesters.has(user.id)
+      },
+    }),
+  ],
+  handler,
+)
+```
+
+`ctx` is typed as `BaseContext` (`object`), because this middleware declares no prerequisites and composes at any position in a stack. Narrow it to the shape of the entries you place before it. Standalone, `ctx` is empty.
 
 ## Why 404 by default
 

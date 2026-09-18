@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 // The subpath re-exports `FetchHandler`, so the `satisfies` anchor is a single
 // import line. This assignment is tsc-verified (the `typecheck` script).
 import { withFeatureFlag, type FetchHandler } from './index.js'
+import { defineMiddleware, pipeline } from '../../core/index.js'
 
 const _anchored = withFeatureFlag(
   { name: 'beta', evaluate: () => true },
@@ -101,6 +102,44 @@ describe('withFeatureFlag', () => {
     expect(on.status).toBe(200)
 
     expect(evaluate).toHaveBeenCalledTimes(2)
+  })
+
+  it('passes the upstream context to evaluate so flags can target the verified caller', async () => {
+    const withUser = defineMiddleware<
+      'user',
+      void,
+      Record<never, never>,
+      { id: string }
+    >({
+      key: 'user',
+      run: () => async (req) => ({
+        user: { id: req.headers.get('x-user') ?? 'anon' },
+      }),
+    })
+
+    const evaluate = vi.fn(
+      (_req: Request, ctx: object) =>
+        'user' in ctx && (ctx as { user: { id: string } }).user.id === 'tester',
+    )
+
+    const app = pipeline(
+      [withUser(), withFeatureFlag({ name: 'beta', evaluate })],
+      innerOk,
+    )
+
+    const off = await app(
+      new Request('http://localhost/', { headers: { 'x-user': 'someone' } }),
+    )
+    expect(off.status).toBe(404)
+
+    const on = await app(
+      new Request('http://localhost/', { headers: { 'x-user': 'tester' } }),
+    )
+    expect(on.status).toBe(200)
+
+    expect(evaluate.mock.calls[0]?.[1]).toMatchObject({
+      user: { id: 'someone' },
+    })
   })
 
   it('supports async evaluators', async () => {
