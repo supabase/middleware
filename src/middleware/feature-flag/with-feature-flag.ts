@@ -162,7 +162,7 @@ export const withFeatureFlag: Middleware<
   /**
    * Two-stage function. The outer `(config) =>` runs once when the consumer
    * constructs the middleware — derive computed config here. The inner
-   * `(req, _ctx) =>` runs per request. Anything built from an environment value
+   * `(req, ctx) =>` runs per request. Anything built from an environment value
    * belongs in the inner stage, constructed lazily on first request: `getEnv`
    * returns `undefined` at construction time on Cloudflare Workers, where
    * bindings arrive per request (see `docs/authoring-guide.md`).
