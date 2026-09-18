@@ -12,7 +12,7 @@
  */
 
 import { defineMiddleware } from '../../core/index.js'
-import type { Middleware } from '../../core/index.js'
+import type { BaseContext, Middleware } from '../../core/index.js'
 
 /**
  * Per-instance configuration the consumer passes to `withFeatureFlag(config, handler)`.
@@ -30,9 +30,16 @@ export interface WithFeatureFlagConfig {
    *
    * Return `true`/`false` for a simple on-off check, or a {@link FeatureFlagVerdict}
    * to also record a variant or provider payload. Async is fine.
+   *
+   * `ctx` carries the contributions of every upstream entry, so a flag placed
+   * after an auth middleware can target the verified caller. It is typed as
+   * {@link BaseContext} because this middleware declares no prerequisites and
+   * composes at any position; narrow it to the shape of the entries you place
+   * before it.
    */
   evaluate: (
     req: Request,
+    ctx: BaseContext,
   ) => Promise<boolean | FeatureFlagVerdict> | boolean | FeatureFlagVerdict
 
   /**
@@ -115,6 +122,24 @@ export interface FeatureFlagContribution {
  * })
  * ```
  *
+ * Placed after an auth entry, `evaluate` reads the caller it verified:
+ *
+ * ```ts
+ * pipeline(
+ *   [
+ *     withUser(),
+ *     withFeatureFlag({
+ *       name: 'beta-checkout',
+ *       evaluate: (_req, ctx) => {
+ *         const { user } = ctx as { user?: { id: string } }
+ *         return user !== undefined && betaTesters.has(user.id)
+ *       },
+ *     }),
+ *   ],
+ *   handler,
+ * )
+ * ```
+ *
  * @category Middleware
  */
 export const withFeatureFlag: Middleware<
@@ -146,8 +171,8 @@ export const withFeatureFlag: Middleware<
    * single-key object `{ [key]: contribution }` to fall through. The runtime
    * picks `result[key]` off the contribution and ignores any other fields.
    */
-  run: (config) => async (req) => {
-    const result = await config.evaluate(req)
+  run: (config) => async (req, ctx) => {
+    const result = await config.evaluate(req, ctx)
     const verdict: FeatureFlagVerdict =
       typeof result === 'boolean' ? { enabled: result } : result
 
