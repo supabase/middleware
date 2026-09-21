@@ -715,7 +715,7 @@ entrypoint lives; `tsdown.config.ts` decides where the build actually puts it.
     "typecheck:consumer": "pnpm --dir test/ts-floor install --ignore-workspace && pnpm --dir test/ts-floor exec tsc --noEmit"
   },
   "dependencies": {
-    "@supabase/middleware": "^0.5.0"
+    "@supabase/middleware": "^0.6.0"
   },
   "devDependencies": {
     "tsdown": "^0.20.3",
