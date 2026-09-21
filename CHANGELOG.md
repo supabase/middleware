@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/supabase/middleware/compare/middleware-v0.5.0...middleware-v0.6.0) (2026-09-18)
+
+
+### Features
+
+* pass the upstream context to withFeatureFlag evaluate ([#45](https://github.com/supabase/middleware/issues/45)) ([fd5e805](https://github.com/supabase/middleware/commit/fd5e805303867fcaf3cd19732a867b8c46d751c0))
+
 ## [0.5.0](https://github.com/supabase/middleware/compare/middleware-v0.4.0...middleware-v0.5.0) (2026-09-04)
 
 
