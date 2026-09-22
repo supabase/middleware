@@ -1022,6 +1022,123 @@ against `FetchHandler`, the prerequisite cannot become a lie at the top level.
 An untyped `export default { fetch: … }` is no such check, which is why the
 anchor matters.
 
+When the key is useful but not required, `In` is the wrong tool. See
+[reading an optional upstream key](#variant-reading-an-optional-upstream-key).
+
+## Variant: reading an optional upstream key
+
+Some middleware do more when another middleware ran before them, and still
+work alone. A cache key that varies by user when a user is known. A log line
+that carries the caller's id when there is one. The upstream key is useful,
+not required.
+
+`In` cannot say that. It is all-or-nothing: `keyof { user?: User }` is still
+`'user'`, so `pipeline` treats the key as required and refuses to compose
+without it, and the middleware loses its optional `ctx`, so it can no longer be
+a `fetch` entry on its own (see the previous variant). Marking the property
+optional changes nothing. Declaring it in `In` makes it mandatory.
+
+The pattern that works keeps `In` empty and makes the contract visible instead
+of required:
+
+1. Derive the optional shape from the producer's exported contribution type.
+   Never write the shape by hand. A rename in the producer then fails your
+   typecheck instead of silently reading `undefined`.
+2. Narrow `ctx` in exactly one helper. That helper holds the only cast.
+3. Read the helper's result and branch on presence.
+
+```ts
+// src/with-cache-key.ts
+import { defineMiddleware } from '@supabase/middleware'
+import type { Middleware } from '@supabase/middleware'
+
+// The producer's exported contribution type. `withUser` contributes
+// `ctx.user` as `{ id: string }` when it runs.
+import type { UserContribution } from './with-user.js'
+
+/**
+ * Upstream keys this middleware reads when they are present. Every field is
+ * optional: the middleware also runs with no upstream at all.
+ */
+type UpstreamUser = Partial<{ user: UserContribution }>
+
+/**
+ * The one place `ctx` is narrowed to the optional upstream shape. `In` is
+ * empty, so the engine types `ctx` as the empty upstream; this cast is where
+ * the optional contract lives.
+ */
+function readUpstreamUser(ctx: unknown): UpstreamUser {
+  return (ctx ?? {}) as UpstreamUser
+}
+
+/** Per-instance configuration for {@link withCacheKey}. */
+export interface WithCacheKeyConfig {
+  /** Namespace for the key, so a deploy can invalidate everything at once. */
+  prefix: string
+}
+
+/** Shape contributed at `ctx.cacheKey`. */
+export interface CacheKeyContribution {
+  /** Stable key for this request: per user when one is known, shared otherwise. */
+  value: string
+}
+
+/**
+ * Computes a cache key for the request. After `withUser` the key varies by
+ * caller; standalone it varies by URL alone. Neither placement is an error.
+ */
+export const withCacheKey: Middleware<
+  'cacheKey',
+  WithCacheKeyConfig,
+  Record<never, never>,
+  CacheKeyContribution
+> = defineMiddleware<
+  'cacheKey',
+  WithCacheKeyConfig,
+  // In stays empty: `user` is read when present, never required.
+  Record<never, never>,
+  CacheKeyContribution
+>({
+  key: 'cacheKey',
+  run: (config) => async (req, ctx) => {
+    const { user } = readUpstreamUser(ctx)
+    const url = new URL(req.url)
+    const scope = user ? `user:${user.id}` : 'shared'
+    return {
+      cacheKey: {
+        value: `${config.prefix}:${scope}:${url.pathname}${url.search}`,
+      },
+    }
+  },
+})
+```
+
+Both placements compile, and each does what its position implies:
+
+```ts
+// Per-user keys.
+pipeline([withUser(), withCacheKey({ prefix: 'v1' })], handler)
+
+// Shared keys. No `withUser`, so `readUpstreamUser` sees nothing.
+pipeline([withCacheKey({ prefix: 'v1' })], handler)
+```
+
+This is not the side channel [rule 3](#rules) forbids. The helper reads one
+shape derived from one producer's public type. It never probes `ctx` for
+whatever happens to be there, and it never invents a key the producer does not
+declare.
+
+If you own the producer and it seeds keys by hand rather than through
+`defineMiddleware`, put `satisfies` on the seed literal against the same
+derived type. That is what turns a rename into a compile error on the writing
+side too.
+
+Test both paths at runtime: one stack with the producer, one without, each
+asserting the value it should produce. Then run one mutation by hand: rename
+the field on the producer's contribution type and confirm `readUpstreamUser`'s
+callers fail to compile. If they still compile, the shape was written by hand
+somewhere and the contract is not real.
+
 ## Variant: a config callback that reads upstream context
 
 Some middleware take a **callback** in their configuration rather than only
@@ -1793,8 +1910,11 @@ as any other nested stack.
    returns `undefined` before the first request. Construct env-dependent clients
    lazily on first request — see
    [client init and `getEnv` timing](#client-init-and-getenv-timing).
-3. **MUST** declare upstream requirements in `In`. **NEVER** check for them at
-   runtime.
+3. **MUST** declare a key your middleware needs in `In`. **NEVER** probe for a
+   required key at runtime. A key you use only when it happens to be there is
+   not a prerequisite, and `In` cannot express it: read it through one typed
+   helper derived from the producer's contribution type, as in
+   [reading an optional upstream key](#variant-reading-an-optional-upstream-key).
 4. **NEVER** `yield` more than once in a generator `run`.
 5. **NEVER** use the response seam to produce a response the handler could
    produce itself. Default to a plain `async` `run`.
