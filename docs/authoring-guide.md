@@ -68,28 +68,22 @@ handler instead.
 
 ### Where it lives
 
-Decide this before the first line. Two questions place any middleware.
-
-- Does it need Supabase? Keys, environment variables, a database connection, or
-  Supabase API surface.
-- Does it work with zero configuration? Installed and composed, it does the
-  right thing on Supabase Edge Functions with no options.
-
-Yes to both, and it belongs in [`@supabase/server`](https://github.com/supabase/server),
-next to `withSupabase`, `withSupabaseClient`, `withPostgresClient`, and
-`withOAuthProtectedResource`. Open a PR there; its `CONTRIBUTING.md` covers the
-layout.
-
-No Supabase surface, and it is its own package under your own scope, which is
-the path the rest of this guide walks. That holds for middleware Supabase
-publishes as much as for anyone else's:
+Your middleware is its own package, under your own scope. That is the path the
+rest of this guide walks, and it holds for middleware Supabase publishes as much
+as for anyone else's:
 [`@supabase-labs/middleware-openfeature`](https://github.com/supabase/middleware-openfeature)
 is one.
 
 This repository ships the composition primitives and two worked examples,
 `withCors` and `withFeatureFlag`. It takes no new middleware.
 
-Naming follows placement. The `with` prefix means middleware: composable,
+[`@supabase/server`](https://github.com/supabase/server) holds the middleware
+Supabase maintains: `withSupabase`, `withSupabaseClient`, `withPostgresClient`,
+`withOAuthProtectedResource`, and the rest. Fixes and improvements to those are
+welcome as PRs. To propose a new one, open an issue there first; its
+`CONTRIBUTING.md` says what the package holds.
+
+Naming is the same everywhere. The `with` prefix means middleware: composable,
 chainable, and never the last entry in a chain. A handler resolves the request
 instead of passing it on, and takes no prefix.
 
