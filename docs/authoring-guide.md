@@ -66,6 +66,27 @@ concern is genuinely two-sided — stamping headers on the way out, timing,
 request-spanning cleanup. If you are only _producing_ a response, do it in the
 handler instead.
 
+### Where it lives
+
+Your middleware is its own package, under your own scope. That is the path the
+rest of this guide walks, and it holds for middleware Supabase publishes as much
+as for anyone else's:
+[`@supabase-labs/middleware-openfeature`](https://github.com/supabase/middleware-openfeature)
+is one.
+
+This repository ships the composition primitives and two worked examples,
+`withCors` and `withFeatureFlag`. It takes no new middleware.
+
+[`@supabase/server`](https://github.com/supabase/server) holds the middleware
+Supabase maintains: `withSupabase`, `withSupabaseClient`, `withPostgresClient`,
+`withOAuthProtectedResource`, and the rest. Fixes and improvements to those are
+welcome as PRs. To propose a new one, open an issue there first; its
+`CONTRIBUTING.md` says what the package holds.
+
+Naming is the same everywhere. The `with` prefix means middleware: composable,
+chainable, and never the last entry in a chain. A handler resolves the request
+instead of passing it on, and takes no prefix.
+
 ## 1. The middleware
 
 `defineMiddleware` takes four type parameters and a spec of `{ key, run }`:
@@ -688,7 +709,7 @@ entrypoint lives; `tsdown.config.ts` decides where the build actually puts it.
     "typecheck:consumer": "pnpm --dir test/ts-floor install --ignore-workspace && pnpm --dir test/ts-floor exec tsc --noEmit"
   },
   "dependencies": {
-    "@supabase/middleware": "^0.3.0"
+    "@supabase/middleware": "^0.6.0"
   },
   "devDependencies": {
     "tsdown": "^0.20.3",
