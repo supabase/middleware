@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0](https://github.com/supabase/middleware/compare/middleware-v0.6.0...middleware-v1.0.0) (2026-09-29)
+
+
+### Features
+
+* stabilize the public API for 1.0 ([#48](https://github.com/supabase/middleware/issues/48)) ([0f65509](https://github.com/supabase/middleware/commit/0f65509134b4fbb8e1a57efa1efcd55efb4585b8))
+
 ## [0.6.0](https://github.com/supabase/middleware/compare/middleware-v0.5.0...middleware-v0.6.0) (2026-09-18)
 
 
