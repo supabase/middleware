@@ -213,13 +213,13 @@ Releases are automated with [release-please](https://github.com/googleapis/relea
 
 ### Version bumps
 
-The package is pre-1.0 and release-please runs with `bump-minor-pre-major`:
+release-please derives the bump from the commit types since the last release:
 
-- **Breaking change** (`feat!:`, `fix!:`, or a `BREAKING CHANGE:` footer): minor bump
+- **Breaking change** (`feat!:`, `fix!:`, or a `BREAKING CHANGE:` footer): major bump
 - **`feat:`**: minor bump
 - **`fix:`**: patch bump
 
-`docs:`, `test:`, and `chore:` commits do not trigger a release on their own.
+`docs:`, `test:`, and `chore:` commits do not trigger a release on their own. A `Release-As: x.y.z` footer on any commit pins the next release to that version.
 
 ### Preview builds
 
