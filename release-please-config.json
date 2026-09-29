@@ -4,8 +4,6 @@
       "release-type": "node",
       "package-name": "@supabase/middleware",
       "changelog-path": "CHANGELOG.md",
-      "bump-minor-pre-major": true,
-      "bump-patch-for-minor-pre-major": false,
       "extra-files": ["jsr.json"]
     }
   },
