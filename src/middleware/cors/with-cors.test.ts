@@ -60,13 +60,33 @@ describe('withCors', () => {
     expect(await res.json()).toEqual({ ok: true })
   })
 
-  it('reflects the origin (never *) when credentials are enabled', async () => {
+  it('keeps a literal * when credentials are enabled with the default origin', async () => {
+    const res = await withCors({ credentials: true }, async () =>
+      Response.json({ ok: true }),
+    )(actual('https://evil.example'))
+
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*')
+    expect(res.headers.get('Access-Control-Allow-Credentials')).toBe('true')
+  })
+
+  it('keeps a literal * when credentials are enabled with origin *', async () => {
     const res = await withCors({ origin: '*', credentials: true }, async () =>
       Response.json({ ok: true }),
     )(actual())
 
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*')
+    expect(res.headers.get('Access-Control-Allow-Credentials')).toBe('true')
+  })
+
+  it('reflects any origin only when origin is reflect', async () => {
+    const res = await withCors(
+      { origin: 'reflect', credentials: true },
+      async () => Response.json({ ok: true }),
+    )(actual())
+
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe(ORIGIN)
     expect(res.headers.get('Access-Control-Allow-Credentials')).toBe('true')
+    expect(res.headers.get('Vary')).toContain('Origin')
   })
 
   it('honors maxAge and explicit allowedHeaders on preflight', async () => {

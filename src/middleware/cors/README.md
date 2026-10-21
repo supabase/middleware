@@ -17,22 +17,22 @@ export default {
 
 ## Config
 
-| Field                  | Type                                                                 | Description                                                                              |
-| ---------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `origin`               | `string \| string[] \| '*' \| ((origin: string \| null) => boolean)` | Allowed origin(s). Default `'*'`. With `credentials`, the request `Origin` is reflected. |
-| `methods`              | `string[]?`                                                          | Methods advertised on preflight. Default: the common verbs.                              |
-| `allowedHeaders`       | `string[]?`                                                          | Headers advertised on preflight. Omit to reflect `Access-Control-Request-Headers`.       |
-| `exposedHeaders`       | `string[]?`                                                          | Response headers exposed to the client beyond the safelist.                              |
-| `credentials`          | `boolean?`                                                           | Send `Access-Control-Allow-Credentials: true`. Default `false`.                          |
-| `maxAge`               | `number?`                                                            | `Access-Control-Max-Age` (seconds) for preflight caching.                                |
-| `optionsSuccessStatus` | `number?`                                                            | Status for a successful preflight. Default `204`.                                        |
+| Field                  | Type                                                                              | Description                                                                        |
+| ---------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `origin`               | `string \| string[] \| '*' \| 'reflect' \| ((origin: string \| null) => boolean)` | Allowed origin(s). Default `'*'`. `'reflect'` echoes the request `Origin`.         |
+| `methods`              | `string[]?`                                                                       | Methods advertised on preflight. Default: the common verbs.                        |
+| `allowedHeaders`       | `string[]?`                                                                       | Headers advertised on preflight. Omit to reflect `Access-Control-Request-Headers`. |
+| `exposedHeaders`       | `string[]?`                                                                       | Response headers exposed to the client beyond the safelist.                        |
+| `credentials`          | `boolean?`                                                                        | Send `Access-Control-Allow-Credentials: true`. Default `false`.                    |
+| `maxAge`               | `number?`                                                                         | `Access-Control-Max-Age` (seconds) for preflight caching.                          |
+| `optionsSuccessStatus` | `number?`                                                                         | Status for a successful preflight. Default `204`.                                  |
 
 It contributes `ctx.cors.allowedOrigin` (the resolved `Access-Control-Allow-Origin`, or `null` when the origin isn't allowed) for handlers that want to branch on it.
 
 ## Behavior notes
 
 - **Preflight** (`OPTIONS` + `Access-Control-Request-Method`) short-circuits before the handler runs and returns `204`.
-- **Credentials + `'*'`** is forbidden by the Fetch spec, so when both are set the request's `Origin` is reflected instead of a literal `*`.
+- **Credentials + `'*'`** is forbidden by the Fetch spec. The header stays a literal `'*'` so the browser rejects the credentialed request. Pass `origin: 'reflect'` (or an allowlist) when you need credentialed CORS.
 - **`Vary: Origin`** is set whenever the allow-origin is per-origin (anything but a literal `*`), so shared caches don't serve one origin's response to another.
 - **Disallowed origins** still reach the handler — CORS is enforced by the browser, not the server; we simply omit the headers.
 - The response is rebuilt with copied headers, so an immutable response (e.g. one returned from `fetch`) is handled and a streaming body passes through untouched.
