@@ -24,6 +24,7 @@ export type CorsOrigin =
   | string
   | string[]
   | '*'
+  | 'reflect'
   | ((requestOrigin: string | null) => boolean)
 
 /**
@@ -33,11 +34,14 @@ export type CorsOrigin =
  */
 export interface WithCorsConfig {
   /**
-   * Allowed origin(s). A literal `'*'`, an exact origin string, a list of
-   * origins, or a predicate over the request's `Origin`. Defaults to `'*'`.
+   * Allowed origin(s). A literal `'*'`, `'reflect'`, an exact origin string, a
+   * list of origins, or a predicate over the request's `Origin`. Defaults to
+   * `'*'`.
    *
    * `'*'` cannot be combined with `credentials: true` (the Fetch spec forbids
-   * it); when both are set, the request's `Origin` is reflected instead.
+   * it). The default stays a literal `'*'` even when credentials are enabled,
+   * so the browser rejects the credentialed request. Pass `origin: 'reflect'`
+   * to echo the request `Origin`, or pass an allowlist.
    *
    * @defaultValue `'*'`
    */
@@ -84,9 +88,13 @@ function resolveAllowOrigin(
 ): string | null {
   const origin = config.origin ?? '*'
 
+  if (origin === 'reflect') {
+    return requestOrigin
+  }
   if (origin === '*') {
-    // Credentials forbid a literal `*`; reflect the caller's origin instead.
-    return config.credentials ? requestOrigin : '*'
+    // Keep `*` literal, including with credentials. Reflecting any Origin
+    // here would allow credentialed cross-origin reads from any site.
+    return '*'
   }
   if (typeof origin === 'function') {
     return origin(requestOrigin) ? requestOrigin : null
