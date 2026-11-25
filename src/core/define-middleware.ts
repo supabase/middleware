@@ -211,6 +211,7 @@ export function defineMiddleware<
         // Let a `try/catch` around the middleware's `yield` observe the failure.
         // If it doesn't handle it, `gen.throw` rethrows and we propagate.
         const recovered = await gen.throw(err)
+        if (!recovered.done) await gen.return(undefined) // it yielded from `catch`; run `finally`
         if (recovered.value instanceof Response) return recovered.value
         throw err
       }
