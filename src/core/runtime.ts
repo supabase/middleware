@@ -209,7 +209,8 @@ const BUFFERED_METHODS = new Set([
  *
  * - `arrayBuffer` / `bytes` / `blob` / `text` / `json` / **`formData`** all read
  *   from the one cached read (`formData` is parsed from the cached bytes using
- *   the request's `content-type`).
+ *   the request's `content-type`). Each call returns its own copy, so a reader
+ *   that writes into or detaches its bytes leaves every later read intact.
  * - **`clone()`** returns another handle over the same cache — reading either
  *   yields the same body; `headers` / `url` / `method` / `signal` / … forward to
  *   the real request, and `proxy instanceof Request` stays true.
@@ -240,19 +241,21 @@ const BUFFERED_METHODS = new Set([
  */
 export function bufferRequest(req: Request): Request {
   let buffer: Promise<ArrayBuffer> | undefined
-  const arrayBuffer = (): Promise<ArrayBuffer> => (buffer ??= req.arrayBuffer())
-  const text = async (): Promise<string> =>
-    new TextDecoder().decode(await arrayBuffer())
+  // Every read goes through a fresh `Response` over the cached bytes. Its
+  // constructor copies them, so no reader can write into or detach the cache,
+  // and with the request's headers each form decodes as the native `Request`
+  // would (form parsing, the UTF-8 BOM).
+  const body = async (): Promise<Response> =>
+    new Response(await (buffer ??= req.arrayBuffer()), {
+      headers: req.headers,
+    })
   const cached: Record<string, () => Promise<unknown>> = {
-    arrayBuffer,
-    text,
-    json: async () => JSON.parse(await text()) as unknown,
-    bytes: async () => new Uint8Array(await arrayBuffer()),
-    blob: async () => new Blob([await arrayBuffer()]),
-    // Parse the cached bytes with the request's content-type (multipart /
-    // urlencoded), so a form body survives an upstream read.
-    formData: async () =>
-      new Response(await arrayBuffer(), { headers: req.headers }).formData(),
+    arrayBuffer: async () => (await body()).arrayBuffer(),
+    bytes: async () => new Uint8Array(await (await body()).arrayBuffer()),
+    blob: async () => new Blob([await (await body()).arrayBuffer()]),
+    text: async () => (await body()).text(),
+    json: async () => (await body()).json(),
+    formData: async () => (await body()).formData(),
   }
   const handler: ProxyHandler<Request> = {
     get(target, prop) {

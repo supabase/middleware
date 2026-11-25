@@ -114,4 +114,41 @@ describe('bufferRequest (host entry points)', () => {
     const res = await app(post())
     expect(await res.json()).toEqual({ peek: '{"a":1}', handler: '{"a":1}' })
   })
+
+  it('gives each reader its own bytes: writing into one read leaves later reads intact', async () => {
+    // e.g. zeroing a secret in place after verifying a signature over it
+    const scrub = defineMiddleware<'scrub', void, Record<never, never>, true>({
+      key: 'scrub',
+      run: () => async (req) => {
+        new Uint8Array(await req.arrayBuffer()).fill(0)
+        return { scrub: true }
+      },
+    })
+
+    const app = pipeline(
+      [scrub()],
+      async (req) => new Response(await req.text()),
+    )
+    const res = await app(post())
+    expect(await res.text()).toBe('{"a":1}')
+  })
+
+  it('gives each reader its own buffer: detaching one read leaves later reads intact', async () => {
+    // e.g. transferring the bytes to a worker
+    const hand = defineMiddleware<'hand', void, Record<never, never>, true>({
+      key: 'hand',
+      run: () => async (req) => {
+        const buf = await req.arrayBuffer()
+        structuredClone(buf, { transfer: [buf] })
+        return { hand: true }
+      },
+    })
+
+    const app = pipeline(
+      [hand()],
+      async (req) => new Response(await req.text()),
+    )
+    const res = await app(post())
+    expect(await res.text()).toBe('{"a":1}')
+  })
 })
