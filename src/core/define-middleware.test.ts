@@ -444,6 +444,37 @@ describe('defineMiddleware — generator (response seam)', () => {
     expect(await res.text()).toBe('handled')
   })
 
+  it('runs `finally` when a try/catch recovers a downstream throw by yielding a Response', async () => {
+    // Yielding a Response short-circuits like returning one, so the generator
+    // must still be closed and its cleanup run.
+    const order: string[] = []
+    const withYieldCatch = defineMiddleware<
+      'guard',
+      void,
+      Record<never, never>,
+      { ok: true }
+    >({
+      key: 'guard',
+      run: () =>
+        async function* () {
+          try {
+            return yield { guard: { ok: true } }
+          } catch {
+            yield new Response('handled', { status: 500 })
+          } finally {
+            order.push('release')
+          }
+        },
+    })
+
+    const handler = withYieldCatch(async () => {
+      throw new Error('kaboom')
+    })
+    const res = await handler(new Request('http://localhost/'))
+    expect(res.status).toBe(500)
+    expect(order).toEqual(['release'])
+  })
+
   it('composes a generator middleware under a plain one, accumulating ctx', async () => {
     const handler = withFeatureFlag(
       { name: 'beta', evaluate: () => true },
