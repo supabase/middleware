@@ -151,4 +151,18 @@ describe('bufferRequest (host entry points)', () => {
     const res = await app(post())
     expect(await res.text()).toBe('{"a":1}')
   })
+
+  it('blob() carries the content-type, as a native Request does', async () => {
+    const init = {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{"a":1}',
+    }
+    const native = await new Request('http://localhost/', init).blob()
+    const buffered = await bufferRequest(
+      new Request('http://localhost/', init),
+    ).blob()
+    expect(native.type).toBe('application/json')
+    expect(buffered.type).toBe(native.type)
+  })
 })
