@@ -32,10 +32,10 @@ export interface WithFeatureFlagConfig {
    * to also record a variant or provider payload. Async is fine.
    *
    * `ctx` carries the contributions of every upstream entry, so a flag placed
-   * after an auth middleware can target the verified caller. It is typed as
-   * {@link BaseContext} because this middleware declares no prerequisites and
-   * composes at any position; narrow it to the shape of the entries you place
-   * before it.
+   * after an auth middleware can target the verified caller. Annotate the keys
+   * it reads, `(req, ctx: { user: User }) => …`: the annotation is a
+   * prerequisite of that call, checked in a `pipeline` and in a nested stack
+   * like any other. Mark a key optional when the flag works without it.
    */
   evaluate: (
     req: Request,
@@ -122,7 +122,10 @@ export interface FeatureFlagContribution {
  * })
  * ```
  *
- * Placed after an auth entry, `evaluate` reads the caller it verified:
+ * Placed after an auth entry, `evaluate` reads the caller it verified. The
+ * annotation on `ctx` is a prerequisite of the call: without `withUser` before
+ * it, the stack fails to compile with
+ * `middleware-prereq: key 'user' is not yet on the context`.
  *
  * ```ts
  * pipeline(
@@ -130,10 +133,8 @@ export interface FeatureFlagContribution {
  *     withUser(),
  *     withFeatureFlag({
  *       name: 'beta-checkout',
- *       evaluate: (_req, ctx) => {
- *         const { user } = ctx as { user?: { id: string } }
- *         return user !== undefined && betaTesters.has(user.id)
- *       },
+ *       evaluate: (_req, ctx: { user: { id: string } }) =>
+ *         betaTesters.has(ctx.user.id),
  *     }),
  *   ],
  *   handler,

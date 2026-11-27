@@ -28,6 +28,7 @@ import type {
   Entry,
   Mismatch,
   Mistyped,
+  RequiredKeys,
   Widened,
 } from './types.js'
 
@@ -56,8 +57,11 @@ type Duplicated<Contributes, Ctx> =
     ? never
     : Extract<keyof Contributes & keyof Ctx, string>
 
-/** Prerequisites an entry declares that are not yet on the context. */
-type Unmet<In, Ctx> = Extract<Exclude<keyof In, keyof Ctx>, string>
+/**
+ * Prerequisites an entry declares that are not yet on the context. An optional
+ * key is never unmet; `Mistyped` still checks its type where it is present.
+ */
+type Unmet<In, Ctx> = Extract<Exclude<RequiredKeys<In>, keyof Ctx>, string>
 
 /**
  * Validate a tuple of entries in order against a seed context. Each entry's

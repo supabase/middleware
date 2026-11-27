@@ -1,4 +1,13 @@
-import type { ConfigArgs, Conflict, ContributedKeys, Entry } from './types.js'
+import type {
+  ConfigArgs,
+  ConfigReading,
+  Conflict,
+  ContributedKeys,
+  Entry,
+  Mismatch,
+  Mistyped,
+  RequiredKeys,
+} from './types.js'
 import type { BaseContext } from './runtime.js'
 import { bufferRequest, isContext, seedContext } from './runtime.js'
 
@@ -335,9 +344,9 @@ type Produced<Base, In> = keyof In extends never
  * placeholder is threaded through call sites. Otherwise `config` is required and
  * positional. Either way, passing `config` explicitly still typechecks.
  */
-type MiddlewareArgs<Config, Handler> = undefined extends Config
-  ? [handler: Handler] | [config: Config, handler: Handler]
-  : [config: Config, handler: Handler]
+type MiddlewareArgs<Config, Handler, Arg = Config> = undefined extends Config
+  ? [handler: Handler] | [config: Arg, handler: Handler]
+  : [config: Arg, handler: Handler]
 
 /**
  * The shape of a middleware produced by {@link defineMiddleware}.
@@ -348,16 +357,20 @@ type MiddlewareArgs<Config, Handler> = undefined extends Config
  *   of the call's return. `Base` is constrained to `In & BaseContext` for
  *   prerequisite enforcement, and the handler parameter is wrapped in
  *   {@link NoConflict} for collision detection — both surface at the call site.
- * - **Handler (propagation)** — the same call when the wrapped handler declares
- *   prerequisites this layer cannot meet from the inward push alone. `Ctx` is
- *   read *outward* off that handler and re-published as this layer's own
- *   requirement, minus the key it contributes.
+ * - **Handler (propagation)** — the same call when the wrapped handler, or a
+ *   config callback's `ctx` annotation, declares prerequisites this layer cannot
+ *   meet from the inward push alone. They are read *outward* and re-published as
+ *   this layer's own requirement, minus the key it contributes.
  * - **Config-only** — `mw(config)` (or `mw()` for config-less) returns an
- *   {@link Entry} for use in a {@link pipeline} array.
+ *   {@link Entry} for use in a {@link pipeline} array. A config callback's `ctx`
+ *   annotation joins the entry's `In`.
  *
  * The two directions cannot share one signature: the cascade needs the handler
  * argument to be a dead inference site, and the propagation needs it to be the
  * live one. Splitting them into ordered overloads lets each keep what it needs.
+ *
+ * A config callback is typed through {@link ConfigReading}: its `ctx` is the
+ * inward `Base` in the cascade, and its annotation in the other two.
  *
  * @category Types
  */
@@ -390,6 +403,12 @@ export interface Middleware<
   // `NoInfer` is a TypeScript 5.4 intrinsic and it is emitted into the published
   // `.d.ts`, so it sets the consumer TypeScript floor (documented under
   // Requirements in the root README). Replacing it means replacing that floor.
+  //
+  // A config callback's `ctx` is `NoInfer<Base>` too: an annotation there
+  // would otherwise be a candidate for `Base`, and one candidate is enough to
+  // take the handler off the return-type path. An annotation this `Base` does
+  // not satisfy fails this form, and the propagation form below carries it
+  // outward instead.
   <Base extends In & BaseContext>(
     ...args: MiddlewareArgs<
       Config,
@@ -400,7 +419,8 @@ export interface Middleware<
           req: Request,
           ctx: NoInfer<Base> & { [K in Key]: Contribution },
         ) => Promise<Response>
-      >
+      >,
+      ConfigReading<Config, In, NoInfer<Base>>
     >
   ): Produced<Base, In>
   // Handler call, propagation form — reached only when the cascade overload
@@ -427,15 +447,31 @@ export interface Middleware<
   // a layer contributing `alpha: { v: string }`. The optional-key constraint
   // makes the requirement's type checked against `Contribution` where the key is
   // present, and is vacuous where it isn't.
+  //
+  // `Need` is what config callbacks' `ctx` annotations declare; it travels
+  // outward the same way. It replaces those keys of `Ctx` because two
+  // disagreeing types would meet as `never`, which any provider discharges; a
+  // `Base` that already disagrees is a `Mismatch`. Only its required keys make
+  // `ctx` required, so optional ones stay optional.
   <
     Base extends In & BaseContext,
-    Ctx extends BaseContext & { [K in Key]?: Contribution } = BaseContext,
+    Need extends BaseContext = BaseContext,
+    // The default types an unannotated handler when an annotated callback
+    // failed the cascade before the handler was reached.
+    Ctx extends BaseContext & { [K in Key]?: Contribution } = BaseContext &
+      NoInfer<Need> & { [K in Key]: Contribution },
   >(
     ...args: MiddlewareArgs<
       Config,
-      NoConflict<Key, Base, (req: Request, ctx: Ctx) => Promise<Response>>
+      NoConflict<Key, Base, (req: Request, ctx: Ctx) => Promise<Response>>,
+      [Mistyped<Need, Base>] extends [never]
+        ? ConfigReading<Config, In, Need>
+        : Mismatch<Mistyped<Need, Base>>
     >
-  ): Produced<Base & Omit<Ctx, Key>, In & Omit<Ctx, Key>>
+  ): Produced<
+    Base & Omit<Ctx, Key | keyof Need> & NoInfer<Need>,
+    In & Omit<Ctx, Key | keyof Need> & NoInfer<Pick<Need, RequiredKeys<Need>>>
+  >
   // Config-only call — `mw(config)` (or `mw()` for config-less) returns an
   // Entry for use in a `pipeline` array. Falls through from the handler overload
   // because config-only calls either have the wrong arity (required-config mw)
@@ -447,5 +483,10 @@ export interface Middleware<
   // leaves a mapped type `Contributions` cannot infer through, collapsing every
   // composite part's contributions to the constraint. Concrete instantiations
   // are unaffected, so the shorthand is safe at call sites.
-  (...args: ConfigArgs<Config>): Entry<{ [K in Key]: Contribution }, In>
+  //
+  // `config` is the only argument, so `Need` can be inferred from it without
+  // touching any handler's typing. `pipeline` then checks it as part of `In`.
+  <Need extends BaseContext = BaseContext>(
+    ...args: ConfigArgs<Config, ConfigReading<Config, In, Need>>
+  ): Entry<{ [K in Key]: Contribution }, In & NoInfer<Need>>
 }

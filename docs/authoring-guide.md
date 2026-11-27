@@ -1062,11 +1062,10 @@ work alone. A cache key that varies by user when a user is known. A log line
 that carries the caller's id when there is one. The upstream key is useful,
 not required.
 
-`In` cannot say that. It is all-or-nothing: `keyof { user?: User }` is still
-`'user'`, so `pipeline` treats the key as required and refuses to compose
-without it, and the middleware loses its optional `ctx`, so it can no longer be
-a `fetch` entry on its own (see the previous variant). Marking the property
-optional changes nothing. Declaring it in `In` makes it mandatory.
+`In` cannot say that. `keyof { user?: User }` is still `'user'`, so the
+middleware loses its optional `ctx` and can no longer be a `fetch` entry on its
+own (see the previous variant). Marking the property optional does not change
+that.
 
 The pattern that works keeps `In` empty and makes the contract visible instead
 of required:
@@ -1173,29 +1172,51 @@ somewhere and the contract is not real.
 
 Some middleware take a **callback** in their configuration rather than only
 plain values — a function called per request to derive something from the
-request and the accumulated context. It is a useful shape, and it has one
-wrinkle worth understanding before you publish it.
-
-`Middleware<Key, Config, In, Contribution>` has no generic for the accumulated
-upstream: `Base` appears only in the handler position. A config callback typed
-through `defineMiddleware` can therefore see the keys you declared in `In`, and
-nothing else. To let it see whatever the consumer composed upstream, thread a
-`Base` parameter through the config type:
+request and the accumulated context. Declare the callback's `ctx` as
+`BaseContext`, or as `In & BaseContext` when it reads your own prerequisites,
+and `defineMiddleware` types the rest:
 
 ```ts
-export interface WithRequestLogConfig<Base extends BaseContext = BaseContext> {
+import { defineMiddleware } from '@supabase/middleware'
+import type { BaseContext, Middleware } from '@supabase/middleware'
+
+export interface WithRequestLogConfig {
   log: (line: Record<string, unknown>) => void
   /** Extra fields, read off the request and the accumulated upstream context. */
-  fields?: (req: Request, ctx: Base) => Record<string, unknown>
+  fields?: (req: Request, ctx: BaseContext) => Record<string, unknown>
 }
+
+export const withRequestLog: Middleware<
+  'requestLog',
+  WithRequestLogConfig,
+  Record<never, never>,
+  RequestLogContribution
+> = defineMiddleware<
+  'requestLog',
+  WithRequestLogConfig,
+  Record<never, never>,
+  RequestLogContribution
+>({
+  key: 'requestLog',
+  run: (config) => async (req, ctx) => {
+    config.log({
+      method: req.method,
+      url: req.url,
+      ...config.fields?.(req, ctx),
+    })
+    return { requestLog: { logged: true } }
+  },
+})
 ```
 
-and publish a hand-written signature over the ordinary `defineMiddleware`
-runtime. [The next variant](#variant-a-hand-written-signature) writes that
-signature out in full. This one covers what your consumers then see, because
-the two composition forms are not equivalent.
+`RequestLogContribution` is `{ logged: true }`. A config callback is a
+top-level function property of the config whose first parameter takes the
+`Request` and whose second is declared that way. The engine types its `ctx` per
+call, so a consumer's callback can read what the consumer composed upstream.
+The two composition forms get there differently.
 
-**Nesting types it automatically.** There is nothing to annotate:
+**Nesting in an anchored stack types it automatically.** There is nothing to
+annotate:
 
 ```ts
 withValidatedBody(
@@ -1206,6 +1227,10 @@ withValidatedBody(
   ),
 ) satisfies FetchHandler
 ```
+
+The callback's `ctx` is the context the enclosing layers push inward, the same
+one the handler sees. Without an anchor that context is not known when the
+callback is checked, so annotate it as in a `pipeline`.
 
 **The `pipeline` form needs one inline annotation** on the callback's `ctx`:
 
@@ -1232,17 +1257,16 @@ Property 'validatedBody' does not exist on type 'object'
 
 **That is evaluation order, not a defect.** `withRequestLog(config)` is a
 complete expression, checked before `pipeline` ever sees the array, so position
-cannot flow backwards into an argument already checked. `Entry` carries no
-accumulated-context parameter, and adding one would not help — the config object
-was checked at the inner call site. The only shape that would fix it is
-`pipeline` taking unapplied pairs, `[withRequestLog, config]`, which is a large
-API change for a small gain. Document the annotation; do not redesign around it.
+cannot flow backwards into an argument already checked. The only shape that
+would fix it is `pipeline` taking unapplied pairs, `[withRequestLog, config]`,
+which is a large API change for a small gain. Document the annotation; do not
+redesign around it.
 
-### The annotation is an assertion, not a contract
+### The annotation is a prerequisite
 
-This is the part to be careful about, and the reason the annotation deserves
-more than a footnote. **Nothing checks it.** Compose the same entry with no
-contributor for the key it names and it still compiles:
+What the annotation declares joins that call's prerequisites, its `In`, and the
+engine checks it like any other. Compose the entry with no contributor for the
+key it names and the stack fails to compile, naming the key:
 
 ```ts
 pipeline(
@@ -1256,37 +1280,32 @@ pipeline(
     }),
   ],
   handler,
-) satisfies FetchHandler // tsc exits 0
+)
 ```
 
-At runtime that throws `TypeError: Cannot read properties of undefined`. Written
-with optional chaining instead it does something worse — it silently produces a
-fallback value for every request and looks like working code.
+```
+middleware-prereq: key 'validatedBody' is not yet on the context (check ordering)
+```
 
-`pipeline` is not the weak link here. It enforces declared prerequisites and
-detects key collisions. The gap is that a config-callback annotation is a
-_different_ channel, and only one of the two is checked:
+An earlier entry that contributes the key at a type the annotation does not
+accept fails with
+`middleware-prereq: key 'validatedBody' is on the upstream context with an incompatible type`.
 
-| Channel                            | Enforced by `pipeline`?                                                      |
-| ---------------------------------- | ---------------------------------------------------------------------------- |
-| `In` (a declared prerequisite)     | **Yes** — `middleware-prereq: key 'validatedBody' is not yet on the context` |
-| A config-callback param annotation | **No** — it asserts a shape; nothing verifies anyone supplies it             |
-
-So the two composition forms differ in safety, not only in ergonomics. Nesting
-catches a missing upstream precisely _because_ you write no annotation there —
-the same code without a contributor above it fails with
-`Property 'validatedBody' does not exist on type 'object'`.
+Nesting checks it the same way a declared `In` is checked (see
+[requiring an upstream key](#variant-requiring-an-upstream-key)). The
+requirement travels outward until a layer contributes the key, so a stack built
+in pieces still composes. A stack where no layer contributes it keeps a
+required `ctx`, and fails where it is checked against `FetchHandler`.
 
 Two rules follow:
 
-1. **If your middleware requires the key, declare it in `In`.** Then the engine
-   enforces it in both forms and names the missing key. Reach for a
-   config-callback annotation only for context your middleware genuinely works
-   without.
-2. **If it optionally reads upstream context, annotate the key as optional** and
-   handle its absence. That is the honest assertion, and it puts the compiler
-   back in the loop — it will not let the callback assume a key nothing
-   supplies:
+1. **If your middleware requires the key, declare it in `In`.** Then every
+   consumer gets the check without writing anything. The annotation is for
+   what one consumer's callback reads.
+2. **If the callback reads the key only when it is there, annotate it as
+   optional** and handle its absence. An optional key never fails for being
+   missing. A provider of the wrong type still fails in a `pipeline` and in an
+   anchored stack:
 
 ```ts
 const fields = (
@@ -1295,23 +1314,19 @@ const fields = (
 ) => ({ body: ctx.validatedBody?.data ?? null })
 ```
 
-Both pipelines then compile, and neither can crash — with the contributor
-present the field is populated, without it the fallback is deliberate rather
-than accidental. Put the annotated form in your middleware's own `@example`
-TSDoc, so the shape consumers copy is the safe one.
-
-Nothing else about the `pipeline` form is affected. Composition, ordering,
-prerequisites and handler typing all work at full fidelity with nothing
-annotated — the handler's `ctx` above sees both keys either way — and a config
-callback that does not read upstream context needs no annotation in either form.
+Put the annotated form in your middleware's own `@example` TSDoc, so the shape
+consumers copy is the checked one. A config callback that does not read
+upstream context needs no annotation in either form.
 
 ## Variant: a hand-written signature
 
 `Middleware<Key, Config, In, Contribution>` has four type parameters. A
-middleware that needs one more writes its own signature. The case above is the
-usual one: a config callback that reads the accumulated upstream needs `Base`
-in scope where `config` is checked. A `Payload` parameter for a parsed body is
-another.
+middleware that needs one more writes its own signature, such as a `Payload`
+parameter for a parsed body. The worked example below threads `Base` into the
+config of `withRequestLog` from the previous variant, which shows every part of
+such a signature on a middleware you already know. `defineMiddleware` types
+that config callback without one, and checks its annotation; this signature
+does not.
 
 The split is the same every time. The runtime is an ordinary `defineMiddleware`
 call, with the extra parameter erased to its constraint, so it keeps context

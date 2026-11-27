@@ -1061,6 +1061,155 @@ describe('type guarantees (tsc-verified)', () => {
 })
 
 // ---------------------------------------------------------------------------
+// A config callback reads the upstream context. What its `ctx` annotation
+// declares is a prerequisite of that call, checked in both composition forms.
+// ---------------------------------------------------------------------------
+describe('a config callback’s ctx annotation (tsc-verified)', () => {
+  const withTagged = defineMiddleware<
+    'tagged',
+    { tagOf: (req: Request, ctx: BaseContext) => string },
+    Record<never, never>,
+    string
+  >({
+    key: 'tagged',
+    run: (config) => async (req, ctx) => ({ tagged: config.tagOf(req, ctx) }),
+  })
+  const withA = passing('alpha', { v: 1 })
+  const withB = passing('beta', { v: 2 })
+  const readsAlpha = (_req: Request, ctx: { alpha: { v: number } }) =>
+    String(ctx.alpha.v)
+
+  it('runs the callback against the upstream context', async () => {
+    const app = pipeline(
+      [withA(), withTagged({ tagOf: readsAlpha })],
+      async (_req, ctx) => Response.json({ tagged: ctx.tagged }),
+    )
+    const res = await app(new Request('http://localhost/'))
+    expect(await res.json()).toEqual({ tagged: '1' })
+  })
+
+  it('pipeline: an earlier entry meets the annotation', () => {
+    const _app = pipeline(
+      [
+        withA(),
+        withTagged({
+          tagOf: (_req, ctx: { alpha: { v: number } }) => String(ctx.alpha.v),
+        }),
+      ],
+      async (_req, ctx) => Response.json({ tagged: ctx.tagged }),
+    ) satisfies FetchHandler
+    void _app
+  })
+
+  it('pipeline: an annotation no earlier entry meets fails to compile', () => {
+    const _app = pipeline(
+      [withB(), withTagged({ tagOf: readsAlpha })],
+      // @ts-expect-error — middleware-prereq: key 'alpha' is not yet on the context
+      async (_req, ctx) => Response.json({ tagged: ctx.tagged }),
+    )
+    void _app
+  })
+
+  it('pipeline: an earlier entry with the key at the wrong type fails to compile', () => {
+    const withAlphaString = passing('alpha', { v: 'one' })
+    const _app = pipeline(
+      [withAlphaString(), withTagged({ tagOf: readsAlpha })],
+      // @ts-expect-error — middleware-prereq: key 'alpha' … incompatible type
+      async (_req, ctx) => Response.json({ tagged: ctx.tagged }),
+    )
+    void _app
+  })
+
+  it('pipeline: an optional key needs no provider, but is checked when present', () => {
+    const readsMaybeAlpha = (_req: Request, ctx: { alpha?: { v: number } }) =>
+      String(ctx.alpha?.v ?? 0)
+    const _app = pipeline(
+      [withB(), withTagged({ tagOf: readsMaybeAlpha })],
+      async (_req, ctx) => Response.json({ tagged: ctx.tagged }),
+    ) satisfies FetchHandler
+    void _app
+
+    const withAlphaString = passing('alpha', { v: 'one' })
+    const _bad = pipeline(
+      [withAlphaString(), withTagged({ tagOf: readsMaybeAlpha })],
+      // @ts-expect-error — alpha.v is a string, the callback reads a number
+      async (_req, ctx) => Response.json({ tagged: ctx.tagged }),
+    )
+    void _bad
+  })
+
+  it('nested, anchored: an enclosing layer meets the annotation', () => {
+    const _app = withA(
+      withB(
+        withTagged(
+          {
+            tagOf: (_req, ctx: { alpha: { v: number } }) => String(ctx.alpha.v),
+          },
+          async (_req, ctx) => Response.json({ t: ctx.tagged, b: ctx.beta.v }),
+        ),
+      ),
+    ) satisfies FetchHandler
+    void _app
+  })
+
+  it('nested, built apart: the annotation travels outward to the provider', () => {
+    const inner = withTagged({ tagOf: readsAlpha }, async (_req, ctx) =>
+      Response.json({ t: ctx.tagged }),
+    )
+    const _app = withA(inner) satisfies FetchHandler
+    void _app
+  })
+
+  it('nested: an annotation no layer meets fails where the stack is checked', () => {
+    const stack = withB(withTagged({ tagOf: readsAlpha }, innerOk))
+    // @ts-expect-error — nothing in the stack contributes `alpha`
+    const _entry: FetchHandler = stack
+    void _entry
+  })
+
+  it('nested: an enclosing provider of the wrong type fails to compile', () => {
+    const withAlphaString = passing('alpha', { v: 'one' })
+    const _bad = withAlphaString(
+      // @ts-expect-error — middleware-prereq: key 'alpha' … incompatible type
+      withTagged({ tagOf: readsAlpha }, innerOk),
+    ) satisfies FetchHandler
+    void _bad
+  })
+
+  it('nested, anchored: an unannotated callback reads the enclosing keys', () => {
+    const _app = withA(
+      withTagged(
+        { tagOf: (_req, ctx) => String(ctx.alpha.v) },
+        async (_req, ctx) => Response.json({ t: ctx.tagged }),
+      ),
+    ) satisfies FetchHandler
+    void _app
+  })
+
+  it('a callback declared against the middleware’s own `In` adds nothing', () => {
+    const withAudit = defineMiddleware<
+      'audit',
+      {
+        tagOf: (
+          req: Request,
+          ctx: { alpha: { v: number } } & BaseContext,
+        ) => string
+      },
+      { alpha: { v: number } },
+      string
+    >({
+      key: 'audit',
+      run: (config) => async (req, ctx) => ({ audit: config.tagOf(req, ctx) }),
+    })
+    const _app = pipeline(
+      [withA(), withAudit({ tagOf: (_req, ctx) => String(ctx.alpha.v) })],
+      async (_req, ctx) => Response.json({ audit: ctx.audit }),
+    ) satisfies FetchHandler
+    void _app
+  })
+})
+
+// ---------------------------------------------------------------------------
 // A middleware that publishes a hand-written signature, as the authoring guide's
 // "Variant: a hand-written signature" does, over an ordinary runtime. Middleware
 // nested inside it must still see its key, at the TypeScript floor too
