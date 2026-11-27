@@ -42,6 +42,7 @@
     "AnyEntry",
     "Accumulate",
     "Mistyped",
+    "Seed",
     "Mismatch"
   ]
 }

@@ -278,6 +278,19 @@ describe('defineComposite — types (tsc-verified)', () => {
     void bad
   })
 
+  it('anchored: types a pipeline in its handler argument with every key it contributes', () => {
+    const _app = withAuth(
+      { mode: 'user' },
+      pipeline([passing('x', 1)()], async (_req, ctx) => {
+        const mode: string = ctx.authMode
+        const sub: string = ctx.claims.sub
+        const x: number = ctx.x
+        return Response.json({ mode, sub, x })
+      }),
+    ) satisfies FetchHandler
+    void _app
+  })
+
   it('types a call nested in its handler argument when build takes no config', () => {
     // `build` takes no parameter, so nothing gives the composite's `Config` a type.
     const composite = defineComposite({

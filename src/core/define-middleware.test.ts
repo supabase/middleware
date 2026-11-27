@@ -1059,3 +1059,62 @@ describe('type guarantees (tsc-verified)', () => {
     void _app
   })
 })
+
+// ---------------------------------------------------------------------------
+// A middleware that publishes a hand-written signature, as the authoring guide's
+// "Variant: a hand-written signature" does, over an ordinary runtime. Middleware
+// nested inside it must still see its key, at the TypeScript floor too
+// (`typecheck:min`).
+// ---------------------------------------------------------------------------
+describe('a middleware with a hand-written signature (tsc-verified)', () => {
+  interface WithTag {
+    <Base extends BaseContext = BaseContext>(
+      config: { label: string },
+      handler: NoConflict<
+        'tag',
+        Base,
+        (
+          req: Request,
+          ctx: NoInfer<Base> & { tag: string },
+        ) => Promise<Response>
+      >,
+    ): (req: Request, ctx?: Base) => Promise<Response>
+    <
+      Base extends BaseContext = BaseContext,
+      Ctx extends BaseContext & { tag?: string } = BaseContext,
+    >(
+      config: { label: string },
+      handler: NoConflict<
+        'tag',
+        Base,
+        (req: Request, ctx: Ctx) => Promise<Response>
+      >,
+    ): (req: Request, ctx: Base & Omit<Ctx, 'tag'>) => Promise<Response>
+    (config: {
+      label: string
+    }): SingleKeyEntry<'tag', Record<never, never>, string>
+  }
+  const withTag = defineMiddleware<
+    'tag',
+    { label: string },
+    Record<never, never>,
+    string
+  >({
+    key: 'tag',
+    run: (config) => async () => ({ tag: config.label }),
+  }) as unknown as WithTag
+
+  it('a middleware nested inside it sees its key', () => {
+    const withB = passing('beta', { v: 2 })
+
+    const _app = withTag(
+      { label: 'x' },
+      withB(async (_req, ctx) => {
+        const tag: string = ctx.tag
+        const b: number = ctx.beta.v
+        return Response.json({ tag, b })
+      }),
+    )
+    void _app
+  })
+})
