@@ -36,7 +36,7 @@ the ones you publish are the same kind of thing, built with the same primitive.
 ### `pipeline`, or nesting
 
 `pipeline` is a convenience, not a requirement. Entries nest directly, and the
-result is the same handler:
+result is the same handler, with the same types:
 
 ```ts
 export default {
@@ -48,17 +48,17 @@ export default {
 
 Nesting costs you the flat reading order past two or three entries, and it
 wants the `satisfies FetchHandler` anchor on the outermost call: `ctx`
-accumulates without it, but a duplicate key compiles silently and a
+accumulates and a duplicate key fails to compile without it, but a
 prerequisite nothing supplies isn't caught until the first request. What it
 buys you is that `FetchHandler` is a _type_, so a consumer composing only
 third-party middleware needs no runtime import from `@supabase/middleware` at
 all — which is exactly why §2 re-exports the type from your own package.
 
-The two forms also mix. A `pipeline` can be a middleware's handler argument.
-With the outermost call anchored, its handler sees every key the layers around
-it contribute, exactly as a nested call would, and its entries are checked
-against those keys too. That holds for middleware built with `defineMiddleware`
-or `defineComposite`, as everything in this guide is. One published with a
+The two forms also mix. A `pipeline` can be a middleware's handler argument,
+and its handler sees every key the layers around it contribute, exactly as a
+nested call would; its entries are checked against those keys too. That holds
+for middleware built with `defineMiddleware` or `defineComposite`, as everything
+in this guide is. One published with a
 [hand-written signature](#variant-a-hand-written-signature) doesn't pass its
 keys to a `pipeline` written as its handler argument; consumers list it in the
 `pipeline` array instead.
@@ -960,16 +960,17 @@ First in the array runs first on the request. `pipeline` returns the outermost
 `(req, ctx) => Response` — that **is** the `fetch` handler, with no wrapper
 around it.
 
-With `pipeline`, accumulation and collision detection are **built in** — the
+Accumulation and collision detection need no anchor in either form — the
 handler sees every upstream key on `ctx`, and duplicating a key fails to compile
-with `middleware-conflict: key '…' is already present on the upstream context`,
-with no anchor anywhere. `pipeline` already returns `FetchHandler`, so the
-`satisfies FetchHandler` above is type-only documentation of the export shape.
+with `middleware-conflict: key '…' is already present on the upstream context`.
+At the top level `pipeline` returns a `FetchHandler` and validates its entries
+array itself, so the `satisfies FetchHandler` above is type-only documentation
+of the export shape.
 
 Where it does carry weight is the **hand-nested** form — `withCors({}, withFeatureFlag({…}, handler))`
-— composed without `pipeline`. There the anchor turns on collision detection
-and asserts the stack can be the `fetch` export. Accumulation is ambient either
-way. That is why §3's test uses it.
+— composed without `pipeline`. There the anchor asserts the stack can be the
+`fetch` export, which is how a prerequisite nothing supplies is caught at build
+time. That is why §3's test uses it.
 
 ## Variant: requiring an upstream key
 

@@ -12,7 +12,7 @@ The package root exports:
 - **`getEnv` / `runtimeName`** — portable environment access and the std-env-detected host name.
 - **`seedContext`** — mint a marked base context (for hosts embedding the engine).
 - **`RuntimeName` / `BaseContext` / `Handler`** — the runtime/context types.
-- **`FetchHandler`** — the type of a stack handed to the host (the `fetch` export, `Deno.serve(app)`, …). Annotating the outermost handler with it (`… satisfies FetchHandler`) asserts the stack can be the `fetch` export, and is what turns on collision detection for nested handlers. Accumulation and `In` prerequisites need no annotation.
+- **`FetchHandler`** — the type of a stack handed to the host (the `fetch` export, `Deno.serve(app)`, …). Annotating the outermost handler with it (`… satisfies FetchHandler`) asserts the stack can be the `fetch` export. Accumulation, collision detection and `In` prerequisites need no annotation.
 - **`Conflict` / `NoConflict`** — the sentinel type surfaced on a key collision, and the guard that sites it on the handler parameter.
 
 ## Quick start (consumer)
@@ -59,8 +59,8 @@ Inside a wrapped handler, `ctx` is a flat intersection of middleware contributio
 
 Two type-level guarantees:
 
-- **Collision detection.** If a middleware composes where the upstream already has its key, the handler parameter it is checked against resolves to a `Conflict<Key>` sentinel string and the stack fails to typecheck — the error names the key and lands on the offending call. A second apply of the same middleware is a compile error, not a silent overwrite. `pipeline` checks this from the entries array; nested handlers need `satisfies FetchHandler` on the outermost call — see below.
-- **Prerequisite enforcement.** Middleware declare the upstream shape they require via `In`. The wrapper constrains `Base extends In & BaseContext`, so composing where the upstream doesn't provide those keys is a type error — and matching key names alone don't discharge it, the contribution's type has to match too. This needs **no** annotation, at any distance: with no accumulated `Base` to push inward, an unmet prerequisite travels outward instead — each layer that doesn't contribute the key republishes it as its own requirement (the propagation overload on `Middleware`), until some layer does.
+- **Collision detection.** If a middleware composes where the upstream already has its key, the handler parameter it is checked against resolves to a `Conflict<Key>` sentinel string and the stack fails to typecheck — the error names the key and lands on the offending call. A second apply of the same middleware is a compile error, not a silent overwrite, at any depth, nested or flat, with no annotation. It is checked within one expression: a layer declared on its own and wrapped later is not checked against what wraps it.
+- **Prerequisite enforcement.** Middleware declare the upstream shape they require via `In`. The wrapper constrains `Base extends In & BaseContext`, so composing where the upstream doesn't provide those keys is a type error — and matching key names alone don't discharge it, the contribution's type has to match too. This needs **no** annotation, at any distance. Within one expression the upstream is pushed inward to the requirer. A layer declared on its own and wrapped later has no upstream pushed into it, so its prerequisite travels outward instead — each layer that doesn't contribute the key republishes it as its own requirement (the propagation overload on `Middleware`), until some layer does.
 
   If no layer does, the requirement is still outstanding at the top and the composed stack has a **required** `ctx`. That is not an error by itself — it surfaces only where the stack is checked against `FetchHandler`, whose `ctx` is optional and to which a required one is not assignable. **An untyped `export default { fetch: app }` performs no such check**, so a stack missing its prerequisite entirely compiles clean, ships, and reads `undefined` on the first request:
 
@@ -68,9 +68,9 @@ Two type-level guarantees:
   TypeError: Cannot read properties of undefined (reading 'sub')
   ```
 
-  Annotate the outermost call with `satisfies FetchHandler`, or put the stack in any `FetchHandler`-typed position (a typed export, `Deno.serve(app)`, …), to make that a build error instead. Unlike collision detection, the annotation is not the only route here — it is just the one that works at the point of definition.
+  Annotate the outermost call with `satisfies FetchHandler`, or put the stack in any `FetchHandler`-typed position (a typed export, `Deno.serve(app)`, …), to make that a build error instead. The annotation is not the only route — it is just the one that works at the point of definition.
 
-> **What `satisfies FetchHandler` is for.** Two things only: asserting the stack can be the `fetch` export (above), and **collision detection** for nested handlers. It is _not_ needed for accumulation — an unannotated outermost call resolves `Base` to its constraint, the same empty upstream the annotation would seed, so `ctx` types at any depth either way. Collision detection is the one guarantee nesting doesn't get for free: the produced handler type records the upstream a stack _requires_, never the keys it _contributes_, so an unannotated enclosing call has nothing to check its own key against and a duplicate compiles silently. One annotation on the outermost call covers any depth, and adds no runtime code. `pipeline` has no such gap — prefer it where you can.
+> **What `satisfies FetchHandler` is for.** One thing: asserting the stack can be the `fetch` export (above). It is _not_ needed for accumulation or collision detection — an unannotated outermost call resolves `Base` to its constraint, the same empty upstream the annotation would seed, and the upstream's keys are pushed inward from there at any depth either way. It adds no runtime code.
 
 ## Bundling middleware into one
 
@@ -112,15 +112,13 @@ This is the one place the request-side default is relaxed, and `function*` is th
 
 Each middleware's contribution lands on `ctx` for every middleware and handler
 inside it, typed either way — from the entries array under `pipeline`, from the
-inward `Base` cascade when nesting. The `satisfies FetchHandler` below is
-therefore an assertion that the stack can be the `fetch` export, not a
+inward `Base` cascade when nesting, and from both when the forms mix: a
+`pipeline` in a middleware's handler argument sees the keys around it, and a
+middleware in a `pipeline`'s sees the entries. (A middleware with a hand-written
+type signature, such as `withSupabase`, doesn't pass its keys to a `pipeline` in
+its handler argument; list it in the array instead.) The `satisfies FetchHandler`
+below is therefore an assertion that the stack can be the `fetch` export, not a
 requirement for `ctx` to type.
-
-The forms mix, and there the anchor does carry weight: a `pipeline` in a
-middleware's handler argument sees the keys around it once the outermost call
-is anchored, and starts from the empty upstream without one. (A middleware with
-a hand-written type signature, such as `withSupabase`, doesn't pass its keys to
-a `pipeline` in its handler argument either way; list it in the array instead.)
 
 ```ts
 import { pipeline } from '@supabase/middleware'
@@ -144,18 +142,18 @@ export default {
 
 ## API
 
-| Export                                      | Description                                                                                                                                                                                                                                                 |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pipeline(entries, handler)`                | Compose a flat array of entries around a handler. Returns the outermost handler: a `FetchHandler` at the top level, and in a handler position, one that takes the context it is placed in.                                                                  |
-| `Entry<Contributes, In>`                    | Type produced by `mw(config)`. Carries a key-to-type record of contributions as a phantom, for `pipeline`'s accumulation. `SingleKeyEntry<Key, In, Contribution>` is the one-key shorthand.                                                                 |
-| `defineMiddleware(spec)`                    | Author helper: declare a middleware. Returns a `(config, handler)` callable.                                                                                                                                                                                |
-| `FetchHandler`                              | The type of a stack handed to the host (the `fetch` export, `Deno.serve(app)`, …). Required for collision detection in nested handlers; also rejects a stack whose `In` prerequisite nobody supplied. Prerequisites between layers are enforced without it. |
-| `Conflict<Key>`                             | Sentinel string the handler parameter resolves to when a middleware would shadow an upstream key.                                                                                                                                                           |
-| `NoConflict<Key, Base, Handler>`            | The collision check `Middleware` applies — `Handler` when `Key` is free on `Base`, the sentinel when it isn't.                                                                                                                                              |
-| `Middleware<Key, Config, In, Contribution>` | The shape of a middleware produced by `defineMiddleware`.                                                                                                                                                                                                   |
-| `getEnv(key)` / `runtimeName`               | Portable environment access (platform env first, host env fallback) and the std-env host name.                                                                                                                                                              |
-| `seedContext(platformArg?)`                 | Mint a marked base context — for hosts embedding the engine (e.g. `@supabase/server`).                                                                                                                                                                      |
-| `RuntimeName` / `BaseContext`               | The std-env host-name union and the base context type.                                                                                                                                                                                                      |
+| Export                                      | Description                                                                                                                                                                                                                        |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pipeline(entries, handler)`                | Compose a flat array of entries around a handler. Returns the outermost handler: a `FetchHandler` at the top level, and in a handler position, one that takes the context it is placed in.                                         |
+| `Entry<Contributes, In>`                    | Type produced by `mw(config)`. Carries a key-to-type record of contributions as a phantom, for `pipeline`'s accumulation. `SingleKeyEntry<Key, In, Contribution>` is the one-key shorthand.                                        |
+| `defineMiddleware(spec)`                    | Author helper: declare a middleware. Returns a `(config, handler)` callable.                                                                                                                                                       |
+| `FetchHandler`                              | The type of a stack handed to the host (the `fetch` export, `Deno.serve(app)`, …). Rejects a stack whose `In` prerequisite nobody supplied. Accumulation, collision detection and prerequisites between layers need no annotation. |
+| `Conflict<Key>`                             | Sentinel string the handler parameter resolves to when a middleware would shadow an upstream key.                                                                                                                                  |
+| `NoConflict<Key, Base, Handler>`            | The collision check `Middleware` applies — `Handler` when `Key` is free on `Base`, the sentinel when it isn't.                                                                                                                     |
+| `Middleware<Key, Config, In, Contribution>` | The shape of a middleware produced by `defineMiddleware`.                                                                                                                                                                          |
+| `getEnv(key)` / `runtimeName`               | Portable environment access (platform env first, host env fallback) and the std-env host name.                                                                                                                                     |
+| `seedContext(platformArg?)`                 | Mint a marked base context — for hosts embedding the engine (e.g. `@supabase/server`).                                                                                                                                             |
+| `RuntimeName` / `BaseContext`               | The std-env host-name union and the base context type.                                                                                                                                                                             |
 
 ## See also
 
