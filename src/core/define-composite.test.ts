@@ -278,6 +278,23 @@ describe('defineComposite — types (tsc-verified)', () => {
     void bad
   })
 
+  it('types a call nested in its handler argument when build takes no config', () => {
+    // `build` takes no parameter, so nothing gives the composite's `Config` a type.
+    const composite = defineComposite({
+      build: () => [passing('a', 1)(), passing('b', 2)()] as const,
+    })
+    const withC = passing('c', 3)
+    const _app = composite(
+      withC(async (_req, ctx) => {
+        const a: number = ctx.a
+        const b: number = ctx.b
+        const c: number = ctx.c
+        return Response.json({ a, b, c })
+      }),
+    )
+    void _app
+  })
+
   it('republishes a prerequisite no part supplies, failing FetchHandler', () => {
     const needsX = defineMiddleware<'y', void, { x: number }, true>({
       key: 'y',
