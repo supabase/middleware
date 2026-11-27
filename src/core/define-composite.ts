@@ -17,7 +17,7 @@
  * @packageDocumentation
  */
 
-import type { NoConflict } from './define-middleware.js'
+import type { NoConflict, NoMismatch, Upstream } from './define-middleware.js'
 import { isContext } from './runtime.js'
 import type { BaseContext } from './runtime.js'
 import type { AnyEntry, ConfigArgs, Entry } from './types.js'
@@ -88,15 +88,19 @@ export interface Composite<
 > {
   // Handler call, cascade form. `Base` flows inward from the contextual return
   // type; `NoInfer` keeps the handler argument a dead inference site so the
-  // push chains through any nesting depth. See `Middleware` for the full
-  // reasoning — this is the record-valued twin of that overload.
+  // push chains through any nesting depth, and `Upstream` keeps the enclosing
+  // keys on the parameter while `Base` is still being inferred. See `Middleware`
+  // for the full reasoning — this is the record-valued twin of that overload.
   <Base extends In & BaseContext>(
     ...args: CompositeArgs<
       Config,
       NoConflict<
         Contributes,
         Base,
-        (req: Request, ctx: NoInfer<Base> & Contributes) => Promise<Response>
+        (
+          req: Request,
+          ctx: NoInfer<Upstream<Base>> & Contributes,
+        ) => Promise<Response>
       >
     >
   ): Produced<Base, In>
@@ -105,6 +109,8 @@ export interface Composite<
   // `Partial<Contributes>` is the record analogue of the single-key
   // `{ [K in Key]?: Contribution }` constraint that keeps `Omit` honest: a
   // requirement whose type disagrees with what we contribute is not discharged.
+  // `NoMismatch` checks the other direction, which an intersected requirement
+  // cannot pass vacuously.
   <
     Base extends In & BaseContext,
     Ctx extends BaseContext & Partial<Contributes> = BaseContext,
@@ -114,7 +120,11 @@ export interface Composite<
       NoConflict<
         Contributes,
         Base,
-        (req: Request, ctx: Ctx) => Promise<Response>
+        NoMismatch<
+          Contributes,
+          Ctx,
+          (req: Request, ctx: Ctx) => Promise<Response>
+        >
       >
     >
   ): Produced<

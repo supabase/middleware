@@ -39,8 +39,9 @@ export type Conflict<Key extends string> =
 
 /**
  * Sentinel type for a prerequisite whose key is on the upstream context with a
- * type the prerequisite does not accept. `ValidateEntries` sites it on the
- * handler parameter of a {@link pipeline}, like {@link Conflict}.
+ * type the prerequisite does not accept. Sited on the handler parameter, like
+ * {@link Conflict}: by `ValidateEntries` in a {@link pipeline}, and by
+ * `NoMismatch` in the propagation overloads of `Middleware` and `Composite`.
  */
 export type Mismatch<Key extends string> =
   `middleware-prereq: key '${Key}' is on the upstream context with an incompatible type`

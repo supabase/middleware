@@ -86,8 +86,8 @@ const _flat = pipeline(
 )
 void _flat
 
-// A `pipeline` in a middleware's handler argument sees the enclosing keys once
-// the outermost call is anchored, the way a nested middleware call does.
+// A `pipeline` in a middleware's handler argument sees the enclosing keys, the
+// way a nested middleware call does.
 const _flatInNested = withA(
   pipeline([withB()], async (_req, ctx) => {
     const a: number = ctx.alpha.v
@@ -111,7 +111,7 @@ const _flatCollision = withFoo(
     // @ts-expect-error — the entry `withFoo` shadows 'foo' from the enclosing layer
     innerOk,
   ),
-) satisfies FetchHandler
+)
 void _flatCollision
 
 const _collision =

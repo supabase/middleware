@@ -115,12 +115,12 @@ export default {
 
 Two type-level guarantees, with no runtime cost:
 
-- **Collision detection.** Two middleware contributing the same key fail to compile, with an error naming the key on the offending call. `pipeline` checks this from the entries array. Nested handlers need `satisfies FetchHandler` on the outermost call — one annotation covers any depth — and without it the duplicate compiles silently and the inner contribution wins at runtime.
+- **Collision detection.** Two middleware contributing the same key fail to compile, with an error naming the key on the offending call. It needs no annotation, at any depth, nested or flat. The check runs within one expression: a layer declared on its own (`const inner = withFoo(handler)`) and wrapped later is not checked against what wraps it.
 - **Prerequisite enforcement.** A middleware can declare upstream keys it needs (e.g. a database middleware that needs `jwtClaims` from an upstream auth middleware). Any layer further out can supply them, at any distance and with no annotation, and the contribution's type has to match — not just the key name. If **nothing** supplies it, the stack keeps a _required_ `ctx`, which fails only where it is checked against `FetchHandler`. A bare `export default { fetch: app }` is no such check, so it compiles and throws `TypeError` on the first request — annotate the outermost call with `satisfies FetchHandler` (or put the stack in any `FetchHandler`-typed position) to catch it at build time.
 
 ### Composing by nesting
 
-`pipeline` is optional. Every middleware also takes the next handler directly, as `withFoo(config, handler)`. Nesting those calls builds the same handler, with the same accumulation and the same prerequisite enforcement, at any depth. The forms mix: a `pipeline` can be a middleware's handler argument. Once the outermost call is anchored with `satisfies FetchHandler` (or sits in any `FetchHandler`-typed position, such as `Deno.serve(…)`), its handler sees every key the layers around it contribute, exactly as a nested call would, and its entries are checked against those keys. That holds for middleware built with `defineMiddleware` or `defineComposite`. One that publishes a hand-written type signature instead, such as `withSupabase` from `@supabase/server`, doesn't pass its keys to a `pipeline` written as its handler argument; put it in the `pipeline` array instead.
+`pipeline` is optional. Every middleware also takes the next handler directly, as `withFoo(config, handler)`. Nesting those calls builds the same handler, with the same accumulation, collision detection and prerequisite enforcement, at any depth. The forms mix: a `pipeline` can be a middleware's handler argument, and its handler sees every key the layers around it contribute, exactly as a nested call would. That holds for middleware built with `defineMiddleware` or `defineComposite`. One that publishes a hand-written type signature instead, such as `withSupabase` from `@supabase/server`, doesn't pass its keys to a `pipeline` written as its handler argument; put it in the `pipeline` array instead.
 
 ```ts
 import type { FetchHandler } from '@supabase/middleware'
@@ -138,7 +138,7 @@ export default {
 }
 ```
 
-Nesting asks one thing of you: keep `satisfies FetchHandler` on the outermost call. That anchor turns on collision detection and the build-time prerequisite check, as the bullets above describe, and gives a `pipeline` in a middleware's handler argument the keys around it. `ctx` accumulation through nested middleware needs no annotation at any depth.
+Nesting asks one thing of you: keep `satisfies FetchHandler` on the outermost call. That anchor is the build-time check that every prerequisite in the stack is supplied, as the bullets above describe. `ctx` accumulation and collision detection need no annotation at any depth.
 
 `FetchHandler` is a type, so importing it adds no runtime code. The [authoring guide](./docs/authoring-guide.md) tells middleware authors to re-export it from their own package. Compose only middleware from packages that do, and your handler file imports nothing from `@supabase/middleware`. Your `package.json` never lists it either. Composition comes free with the middleware themselves.
 

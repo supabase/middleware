@@ -43,6 +43,8 @@
     "Accumulate",
     "Mistyped",
     "Seed",
+    "Upstream",
+    "NoMismatch",
     "Mismatch"
   ]
 }

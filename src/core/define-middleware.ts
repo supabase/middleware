@@ -1,4 +1,11 @@
-import type { ConfigArgs, Conflict, ContributedKeys, Entry } from './types.js'
+import type {
+  ConfigArgs,
+  Conflict,
+  ContributedKeys,
+  Entry,
+  Mismatch,
+  Mistyped,
+} from './types.js'
 import type { BaseContext } from './runtime.js'
 import { bufferRequest, isContext, seedContext } from './runtime.js'
 
@@ -74,15 +81,14 @@ function warnUnhonoredThirdArg(): void {
  *   call has no contextual return type, so `Base` resolves to its
  *   constraint (the empty upstream, same as `satisfies FetchHandler` would
  *   seed), and the cascade proceeds inward.
- * - **Collision detection does need one.** Composing where the upstream
+ * - **Neither does collision detection.** Composing where the upstream
  *   already has the key resolves the handler parameter to a {@link Conflict}
- *   sentinel (see {@link NoConflict}), but only under `satisfies
- *   FetchHandler` on the outermost call: the produced type records what a
- *   stack requires, not what it contributes, so an unannotated call has
- *   nothing to check a duplicate key against, and it compiles silently. One
- *   annotation covers any depth. {@link pipeline} has no such gap, since it
- *   validates from its entries array; a stack that cannot carry the
- *   annotation is better written flat.
+ *   sentinel (see {@link NoConflict}) at any depth, because the same inward
+ *   push that accumulates `ctx` carries the upstream's keys to the inner
+ *   call. The check needs the stack written as one expression: the produced
+ *   type records what a stack requires, not what it contributes, so a layer
+ *   declared on its own and wrapped later (`const inner = withFoo(h)`, then
+ *   `withFoo(inner)`) is not checked against what wraps it.
  *
  * @typeParam Key - The literal-string key contributed to ctx.
  * @typeParam Config - Configuration object the middleware accepts.
@@ -264,9 +270,25 @@ export type IsAny<T> = boolean extends (T extends never ? true : false)
   : false
 
 /**
+ * The upstream context a handler parameter is typed against: `Base`, or the
+ * empty upstream ({@link BaseContext}) when `Base` is `never`.
+ *
+ * A call nested in a handler argument infers its own `Base` from the enclosing
+ * call's handler parameter, and TypeScript instantiates every type parameter
+ * the enclosing call has not inferred yet as `never` while it does — which,
+ * for an unannotated outermost call, is its `Base`. `NoInfer<Base> & { key: … }`
+ * would collapse to `never` there and drop the enclosing layer's key. Through
+ * `Upstream` it reads as the empty upstream plus that key, which is how a
+ * nested {@link pipeline} (or any call that infers from that parameter) sees
+ * every layer around it.
+ */
+export type Upstream<Base> = [Base] extends [never] ? BaseContext : Base
+
+/**
  * The collision check {@link Middleware} applies: resolves to `Handler` when
  * every contributed key is free on `Base`, and otherwise to a {@link Conflict}
  * sentinel naming the colliding key — a union of them where several collide.
+ * A `never` `Base` is read through `Upstream`, so it has no keys.
  *
  * Accepts either a single literal key (`NoConflict<'flag', Base, H>`) or a
  * contributions record (`NoConflict<{ flag: boolean }, Base, H>`), so the same
@@ -306,12 +328,38 @@ export type NoConflict<
   IsAny<Base> extends true
     ? Handler
     : [
-          Extract<ContributedKeys<KeyOrContributes> & keyof Base, string>,
+          Extract<
+            ContributedKeys<KeyOrContributes> & keyof Upstream<Base>,
+            string
+          >,
         ] extends [never]
       ? Handler
       : Conflict<
-          Extract<ContributedKeys<KeyOrContributes> & keyof Base, string>
+          Extract<
+            ContributedKeys<KeyOrContributes> & keyof Upstream<Base>,
+            string
+          >
         >
+
+/**
+ * The discharge check the propagation overloads of {@link Middleware} and
+ * {@link Composite} apply: resolves to `Handler` when every key the wrapped
+ * handler's `Ctx` requires that this layer contributes is contributed at a type
+ * `Ctx` accepts, and otherwise to a `Mismatch` sentinel naming the key.
+ *
+ * The propagation form's `Ctx extends { [K in Key]?: Contribution }` constraint
+ * compares the requirement to the contribution. A requirement republished from
+ * an upstream and a handler that disagree on a key is their intersection, which
+ * is a subtype of either type, so that constraint alone reads it as met. This
+ * compares the contribution to the requirement, which only a contribution the
+ * requirement accepts passes, and reports the failure on the handler parameter
+ * the way {@link NoConflict} reports a collision.
+ */
+export type NoMismatch<Contributes, Ctx, Handler> = [
+  Mistyped<Ctx, Contributes>,
+] extends [never]
+  ? Handler
+  : Mismatch<Mistyped<Ctx, Contributes>>
 
 /**
  * The produced handler shape.
@@ -351,7 +399,9 @@ type MiddlewareArgs<Config, Handler> = undefined extends Config
  * - **Handler (propagation)** — the same call when the wrapped handler declares
  *   prerequisites this layer cannot meet from the inward push alone. `Ctx` is
  *   read *outward* off that handler and re-published as this layer's own
- *   requirement, minus the key it contributes.
+ *   requirement, minus the key it contributes. The handler parameter is also
+ *   wrapped in `NoMismatch`, so a requirement is discharged only by a
+ *   contribution of a type it accepts.
  * - **Config-only** — `mw(config)` (or `mw()` for config-less) returns an
  *   {@link Entry} for use in a {@link pipeline} array.
  *
@@ -373,19 +423,22 @@ export interface Middleware<
   // an implicitly-typed arrow handler. Overload order is the tie-break: an arrow
   // matches both, and only this one contextually types its `ctx`.
   //
-  // `NoInfer<Base>` on the handler's `ctx` is what makes accumulation survive
-  // past two layers. `Base` flows *inward*, from the contextual type of this
-  // call's return — a `satisfies FetchHandler` where there is one, and otherwise
-  // `Base`'s own constraint, the empty upstream, which is the same starting
-  // point — so each layer's `ctx` is the accumulated upstream plus its own key.
-  // That fallback is why accumulation needs no annotation at any depth. Left
-  // inferable, `ctx` is a second inference site — and at depth >= 2 the handler
-  // argument is itself a middleware call whose type supplies a candidate there,
-  // which outranks the contextual return type and collapses `Base` to its
-  // constraint (the empty upstream). The cascade then stops: the innermost
-  // handler sees only its own key and the stack fails to compile. Blocking
-  // inference at that site leaves the return type as the single source of
-  // `Base`, so the push chains through any nesting depth.
+  // `Base` flows *inward*, from the contextual type of this call's return: the
+  // enclosing layer's handler parameter, a `satisfies FetchHandler`, or with
+  // neither, `Base`'s own constraint, the empty upstream. Each layer's `ctx` is
+  // the accumulated upstream plus its own key, at any depth and with no
+  // annotation. Two wrappers on the handler's `ctx` keep that push intact:
+  //
+  // - `NoInfer` leaves the return type as the only source of `Base`. Left
+  //   inferable, `ctx` is a second inference site, and when the handler
+  //   argument is itself a middleware call its type supplies a candidate there
+  //   that outranks the contextual return type and collapses `Base` to its
+  //   constraint, so the innermost handler sees only its own key.
+  // - `Upstream` keeps the enclosing keys on this parameter while `Base` is
+  //   still being inferred. A call nested in the handler argument reads `Base`
+  //   as `never` at that point; through `Upstream` the parameter it infers from
+  //   is the empty upstream plus this layer's key, not `never`. `NoConflict`
+  //   reads `Base` the same way.
   //
   // `NoInfer` is a TypeScript 5.4 intrinsic and it is emitted into the published
   // `.d.ts`, so it sets the consumer TypeScript floor (documented under
@@ -398,20 +451,21 @@ export interface Middleware<
         Base,
         (
           req: Request,
-          ctx: NoInfer<Base> & { [K in Key]: Contribution },
+          ctx: NoInfer<Upstream<Base>> & { [K in Key]: Contribution },
         ) => Promise<Response>
       >
     >
   ): Produced<Base, In>
   // Handler call, propagation form — reached only when the cascade overload
-  // above fails, which is exactly the unanchored-prerequisite case.
+  // above fails: the wrapped handler requires more than `Base` carries.
   //
   // An `In` prerequisite is discharged by whichever layer contributes the key.
-  // With an anchor that happens on the way in: `Base` carries the accumulated
-  // upstream down to the requirer, so the cascade overload already satisfies it
-  // at any depth. Unanchored there is nothing to carry — `Base` collapses to its
-  // constraint, the empty upstream — so the requirement has to travel the other
-  // way, *outward*, one layer at a time until some layer contributes the key.
+  // In a stack written as one expression that happens on the way in: `Base`
+  // carries the accumulated upstream down to the requirer, so the cascade
+  // overload already satisfies it at any depth. A layer typed on its own and
+  // wrapped later (`const inner = withB(withNeedsAlpha(h))`) had no upstream to
+  // carry in, so its requirement travels the other way, *outward*, one layer at
+  // a time until some layer contributes the key.
   //
   // That outward travel is inference off the handler argument, the very site
   // `NoInfer` closes above; the two readings of that argument are mutually
@@ -426,14 +480,24 @@ export interface Middleware<
   // Omitting by key name alone would discharge `{ alpha: { v: number } }` against
   // a layer contributing `alpha: { v: string }`. The optional-key constraint
   // makes the requirement's type checked against `Contribution` where the key is
-  // present, and is vacuous where it isn't.
+  // present, and is vacuous where it isn't. It checks one direction only: a
+  // requirement republished from an upstream and a handler that disagree is an
+  // intersection, which passes it. `NoMismatch` checks the other direction.
   <
     Base extends In & BaseContext,
     Ctx extends BaseContext & { [K in Key]?: Contribution } = BaseContext,
   >(
     ...args: MiddlewareArgs<
       Config,
-      NoConflict<Key, Base, (req: Request, ctx: Ctx) => Promise<Response>>
+      NoConflict<
+        Key,
+        Base,
+        NoMismatch<
+          { [K in Key]: Contribution },
+          Ctx,
+          (req: Request, ctx: Ctx) => Promise<Response>
+        >
+      >
     >
   ): Produced<Base & Omit<Ctx, Key>, In & Omit<Ctx, Key>>
   // Config-only call — `mw(config)` (or `mw()` for config-less) returns an

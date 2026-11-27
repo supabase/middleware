@@ -295,12 +295,30 @@ describe('pipeline in a handler position', () => {
     void _app
   })
 
-  it('a middleware handler argument, unanchored: the pipeline starts from the empty upstream', () => {
-    // With nothing checking the outermost call, `withA`'s upstream is not
-    // inferred yet when the pipeline is typed, so its key is not visible here.
+  it('a middleware handler argument, unanchored: sees the enclosing key at runtime', async () => {
+    const app = withA(
+      pipeline([withB()], async (_req, ctx) =>
+        Response.json({ a: ctx.a, b: ctx.b }),
+      ),
+    )
+    const res = await app(new Request('http://localhost/'))
+    expect(await res.json()).toEqual({ a: 'a', b: 1 })
+  })
+
+  it('a middleware handler argument, unanchored: ctx is the enclosing context plus the entries, exactly', () => {
     const _app = withA(
       pipeline([withB()], async (_req, ctx) => {
-        exact<BaseContext & { b: number }>()(ctx, true)
+        exact<BaseContext & { a: string } & { b: number }>()(ctx, true)
+        return Response.json({ ok: true })
+      }),
+    )
+    void _app
+  })
+
+  it('a middleware handler argument, unanchored: the enclosing layer meets an entry prerequisite', () => {
+    const _app = withA(
+      pipeline([withNeedsA()], async (_req, ctx) => {
+        exact<BaseContext & { a: string } & { n: boolean }>()(ctx, true)
         return Response.json({ ok: true })
       }),
     )
@@ -395,6 +413,17 @@ describe('pipeline in a handler position', () => {
         innerOk,
       ),
     ) satisfies FetchHandler
+    void _bad
+  })
+
+  it('collision, unanchored: an entry key the enclosing layer already contributes fails', () => {
+    const _bad = withA(
+      pipeline(
+        [withA()],
+        // @ts-expect-error — middleware-conflict: key 'a' is already present on the upstream context
+        innerOk,
+      ),
+    )
     void _bad
   })
 

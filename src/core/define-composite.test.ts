@@ -291,6 +291,19 @@ describe('defineComposite — types (tsc-verified)', () => {
     void _app
   })
 
+  it('unanchored: types a pipeline in its handler argument with every key it contributes', () => {
+    const _app = withAuth(
+      { mode: 'user' },
+      pipeline([passing('x', 1)()], async (_req, ctx) => {
+        const mode: string = ctx.authMode
+        const sub: string = ctx.claims.sub
+        const x: number = ctx.x
+        return Response.json({ mode, sub, x })
+      }),
+    )
+    void _app
+  })
+
   it('types a call nested in its handler argument when build takes no config', () => {
     // `build` takes no parameter, so nothing gives the composite's `Config` a type.
     const composite = defineComposite({
@@ -306,6 +319,20 @@ describe('defineComposite — types (tsc-verified)', () => {
       }),
     )
     void _app
+  })
+
+  it('does not discharge a requirement the upstream carries at another type', () => {
+    const needsX = defineMiddleware<'y', void, { x: number }, true>({
+      key: 'y',
+      run: () => async () => ({ y: true }),
+    })
+    const composite = defineComposite({
+      build: () => [passing('z', 1)()] as const,
+    })
+    const _bad =
+      // @ts-expect-error — middleware-prereq: key 'x' is on the upstream context with an incompatible type
+      passing('x', 'one')(composite(needsX(innerOk))) satisfies FetchHandler
+    void _bad
   })
 
   it('republishes a prerequisite no part supplies, failing FetchHandler', () => {
@@ -435,8 +462,7 @@ describe('defineComposite — internal keys are scoped, not deleted', () => {
 
   it('restores an upstream key of the same name, nested', async () => {
     // `satisfies FetchHandler` anchors the outermost call, which is what the
-    // docs ask for and what keeps the cascade overload (rather than
-    // propagation) selected at the TypeScript floor.
+    // docs ask for.
     const app = upstreamAuth(
       withAuth({ mode: 'none' }, async (_req, ctx) =>
         Response.json({ auth: ctx.auth, keys: Object.keys(ctx).sort() }),
