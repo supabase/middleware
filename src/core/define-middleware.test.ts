@@ -1061,6 +1061,118 @@ describe('type guarantees (tsc-verified)', () => {
 })
 
 // ---------------------------------------------------------------------------
+// A stack written inline where a host's `fetch` signature types it. The host's
+// second parameter is its platform value, which never reaches `ctx` at runtime,
+// so the types start from the empty upstream too. Verified by `tsc --noEmit`,
+// except the runtime case.
+// ---------------------------------------------------------------------------
+describe('in a host-typed export (tsc-verified)', () => {
+  // The shapes of a Workers `ExportedHandler<Env>` and of `Deno.serve`'s
+  // handler: a platform value second, and a return that admits a bare `Response`.
+  type ExportedHandler<Env> = {
+    fetch?: (
+      req: Request,
+      env: Env,
+      ctx: { waitUntil(promise: Promise<unknown>): void },
+    ) => Response | Promise<Response>
+  }
+  type Env = { DB: string; SECRET: string }
+  type ServeHandler = (
+    req: Request,
+    info: { remoteAddr: { hostname: string } },
+  ) => Response | Promise<Response>
+  const serve = (handler: ServeHandler) => handler
+
+  const withA = passing('alpha', { v: 1 })
+  const withB = passing('beta', { v: 2 })
+
+  it('a Workers export: ctx is the stack, with none of the env', async () => {
+    const app = {
+      fetch: withA(
+        withB(async (_req, ctx) => {
+          const v: [number, number] = [ctx.alpha.v, ctx.beta.v]
+          // @ts-expect-error — the env's bindings are not on `ctx`
+          void ctx.SECRET
+          return Response.json({ v, keys: Object.keys(ctx).sort() })
+        }),
+      ),
+    } satisfies ExportedHandler<Env>
+
+    const res = await app.fetch(new Request('http://localhost/'), {
+      DB: 'd',
+      SECRET: 's',
+    })
+    expect(await res.json()).toEqual({ v: [1, 2], keys: ['alpha', 'beta'] })
+  })
+
+  it('a Workers export: a key named like a binding is not a collision', () => {
+    const withDB = passing('DB', { v: 3 })
+
+    const _app = {
+      fetch: withA(
+        withDB(async (_req, ctx) => {
+          const v: [number, number] = [ctx.alpha.v, ctx.DB.v]
+          return Response.json(v)
+        }),
+      ),
+    } satisfies ExportedHandler<Env>
+    void _app
+  })
+
+  it('a Workers export typed by a declaration instead of satisfies', () => {
+    const _app: ExportedHandler<Env> = {
+      fetch: withA(async (_req, ctx) => {
+        const a: number = ctx.alpha.v
+        // @ts-expect-error — the env's bindings are not on `ctx`
+        void ctx.DB
+        return Response.json({ a })
+      }),
+    }
+    void _app
+  })
+
+  it('Deno.serve: ctx is the stack, with none of the connection info', () => {
+    serve(
+      withA(
+        withB(async (_req, ctx) => {
+          const v: [number, number] = [ctx.alpha.v, ctx.beta.v]
+          // @ts-expect-error — the connection info is not on `ctx`
+          void ctx.remoteAddr
+          return Response.json(v)
+        }),
+      ),
+    )
+  })
+
+  it('collision: a key repeated inside a host export still fails', () => {
+    const _bad = {
+      fetch: withA(
+        withB(
+          // @ts-expect-error — innermost `withA` shadows 'alpha' from two layers up
+          withA(innerOk),
+        ),
+      ),
+    } satisfies ExportedHandler<Env>
+    void _bad
+  })
+
+  it('prerequisite: a middleware with `In` keys cannot be the host export', () => {
+    const withNeedsDB = defineMiddleware<
+      'needsDB',
+      void,
+      { DB: { v: number } },
+      true
+    >({ key: 'needsDB', run: () => async () => ({ needsDB: true }) })
+
+    const _bad = {
+      // @ts-expect-error — nothing in the stack contributes 'DB'
+      fetch: withNeedsDB(innerOk),
+    } satisfies ExportedHandler<Env>
+    void _bad
+  })
+})
+
+// ---------------------------------------------------------------------------
 // A middleware that publishes a hand-written signature, as the authoring guide's
 // "Variant: a hand-written signature" does, over an ordinary runtime. Middleware
 // nested inside it must still see its key, at the TypeScript floor too

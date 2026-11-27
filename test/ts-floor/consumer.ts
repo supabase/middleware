@@ -139,6 +139,39 @@ void _unmet
 const _met = withA(withNeedsAlpha(innerOk)) satisfies FetchHandler
 void _met
 
+// --- Host-typed exports -----------------------------------------------------
+// Written inline where a host's `fetch` types it, a stack starts from the empty
+// upstream: the host's second parameter is a platform value, not a context.
+
+type ExportedHandler<Env> = {
+  fetch?: (req: Request, env: Env) => Response | Promise<Response>
+}
+const _workers = {
+  fetch: withA(
+    withB(async (_req, ctx) => {
+      const b: number = ctx.beta.v
+      // @ts-expect-error — the env's bindings are not on `ctx`
+      void ctx.SECRET
+      return Response.json({ a: ctx.alpha.v, b })
+    }),
+  ),
+} satisfies ExportedHandler<{ alpha: string; SECRET: string }>
+void _workers
+
+declare function serve(
+  handler: (
+    req: Request,
+    info: { remoteAddr: { hostname: string } },
+  ) => Response | Promise<Response>,
+): void
+serve(
+  withA(async (_req, ctx) => {
+    // @ts-expect-error — the connection info is not on `ctx`
+    void ctx.remoteAddr
+    return Response.json({ a: ctx.alpha.v })
+  }),
+)
+
 // --- Composites -------------------------------------------------------------
 // A composite declares a *record* of contributions derived from its parts, so
 // the same checks that guard a single-key middleware have to hold across a set.

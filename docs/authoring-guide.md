@@ -1316,15 +1316,17 @@ another.
 The split is the same every time. The runtime is an ordinary `defineMiddleware`
 call, with the extra parameter erased to its constraint, so it keeps context
 seeding, request buffering and contribution extraction. The published type is
-an interface with the engine's three call forms written out, and the value is
-cast to it. The [`NoConflict` docblock](../src/core/define-middleware.ts)
-sanctions this.
+an interface with the engine's cascade, propagation and config-only forms
+written out, and the value is cast to it. The
+[`NoConflict` docblock](../src/core/define-middleware.ts) sanctions this.
 
-One thing the engine's own types give that a hand-written signature does not: a
-`pipeline` written as its handler argument doesn't see its key.
+Two things the engine's own types give that a hand-written signature does not.
+A `pipeline` written as its handler argument doesn't see its key:
 `withRequestLog({ log }, pipeline([…], handler))` types the pipeline's handler
-without `ctx.requestLog`. Consumers who need both list `withRequestLog` in the
-`pipeline` array instead.
+without `ctx.requestLog`. And written inline as a host's `fetch`, in a Workers
+`ExportedHandler<Env>` or `Deno.serve(…)`, it types `ctx` with the host's
+second parameter, whose values are never on `ctx` at runtime. A `pipeline`
+handles both, so consumers list `withRequestLog` in a `pipeline` array instead.
 
 The runtime:
 

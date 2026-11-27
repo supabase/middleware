@@ -69,6 +69,10 @@ function warnUnhonoredThirdArg(): void {
  *   `ctx`, which fails only where it is checked against {@link FetchHandler}.
  *   Annotate the outermost call to catch this at build time; an untyped
  *   `export default { fetch: … }` will not catch it.
+ * - **A host-typed export starts from the empty upstream.** Where the stack is
+ *   checked against a host's `fetch` (a Workers `ExportedHandler`,
+ *   `Deno.serve`), the host's second parameter is its platform value, so
+ *   none of its bindings are on `ctx`, and a key named like one is free.
  * - **Accumulation needs no annotation.** The innermost handler sees every
  *   upstream key ambiently at any nesting depth: an unannotated outermost
  *   call has no contextual return type, so `Base` resolves to its
@@ -340,9 +344,40 @@ type MiddlewareArgs<Config, Handler> = undefined extends Config
   : [config: Config, handler: Handler]
 
 /**
+ * `Args` where the call's return type is checked against a host's `fetch`
+ * signature, which admits a bare `Response`. Anywhere else `Out` is
+ * `Promise<Response>`, or `never` with no contextual type, and this is a
+ * three-argument tuple. A middleware takes at most two, so TypeScript drops the
+ * overload on arity, before checking any argument, and reports no error for it.
+ */
+export type HostArgs<Out, Args> = [Out] extends [Promise<Response>]
+  ? [never, never, never]
+  : Args
+
+/**
+ * The produced handler in a host position. `Out` is in the return type so it
+ * is inferred from the host's, and the host's bare `Response` is removed again.
+ */
+export type HostProduced<In, Out> = keyof In extends never
+  ? (
+      req: Request,
+      ctx?: BaseContext,
+    ) => Promise<Response> | (Out extends Response ? never : Out)
+  : (
+      req: Request,
+      ctx: In & BaseContext,
+    ) => Promise<Response> | (Out extends Response ? never : Out)
+
+/**
  * The shape of a middleware produced by {@link defineMiddleware}.
  *
- * Three call signatures:
+ * Four call signatures:
+ * - **Handler (host)** — `mw(config, handler)` written inline as a host's
+ *   `fetch`, where the call's return type is checked against a Workers
+ *   `ExportedHandler` or `Deno.serve`. The host's second argument is a platform
+ *   value, not an upstream context, so the handler's upstream is
+ *   {@link BaseContext}: the host's bindings are not on `ctx`, and a key named
+ *   like one does not collide.
  * - **Handler (cascade)** — `mw(config, handler)` (or `mw(handler)`) returns the
  *   produced fetch handler, with `Base` pushed *inward* from the contextual type
  *   of the call's return. `Base` is constrained to `In & BaseContext` for
@@ -358,6 +393,10 @@ type MiddlewareArgs<Config, Handler> = undefined extends Config
  * The two directions cannot share one signature: the cascade needs the handler
  * argument to be a dead inference site, and the propagation needs it to be the
  * live one. Splitting them into ordered overloads lets each keep what it needs.
+ * The host form is a separate signature too. Recognising a host takes an
+ * inferred type parameter, and TypeScript types a nested handler from the
+ * cascade's contextual return type only while no other type parameter of the
+ * call has an inference or a default.
  *
  * @category Types
  */
@@ -367,11 +406,33 @@ export interface Middleware<
   In extends object,
   Contribution,
 > {
-  // Handler call, cascade form — listed first so TypeScript's bidirectional
-  // generic inference works correctly for nested calls (`withA(withB(handler))`),
-  // and so this form, not the propagation overload below, is the one that types
-  // an implicitly-typed arrow handler. Overload order is the tie-break: an arrow
-  // matches both, and only this one contextually types its `ctx`.
+  // Handler call, host form — listed first so that in a host-typed position it
+  // is chosen before the cascade, which would read the host's parameter as
+  // `Base`. `Out` is the position's return type: a host's admits a bare
+  // `Response`. Elsewhere `HostArgs` has an arity no call matches, so this form
+  // drops out before its arguments are checked and leaves them to the cascade.
+  <Out = never>(
+    ...args: HostArgs<
+      Out,
+      MiddlewareArgs<
+        Config,
+        NoConflict<
+          Key,
+          In & BaseContext,
+          (
+            req: Request,
+            ctx: In & BaseContext & { [K in Key]: Contribution },
+          ) => Promise<Response>
+        >
+      >
+    >
+  ): HostProduced<In, Out>
+  // Handler call, cascade form — listed ahead of the propagation form so
+  // TypeScript's bidirectional generic inference works correctly for nested
+  // calls (`withA(withB(handler))`), and so this form, not the propagation
+  // overload below, is the one that types an implicitly-typed arrow handler.
+  // Overload order is the tie-break: an arrow matches both, and only this one
+  // contextually types its `ctx`.
   //
   // `NoInfer<Base>` on the handler's `ctx` is what makes accumulation survive
   // past two layers. `Base` flows *inward*, from the contextual type of this
