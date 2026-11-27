@@ -25,9 +25,11 @@ import type { BaseContext } from './runtime.js'
 import type {
   AnyEntry,
   Conflict,
+  ContributedKeys,
   Entry,
   Mismatch,
   Mistyped,
+  OutOfOrder,
   Widened,
 } from './types.js'
 
@@ -41,7 +43,7 @@ type AnyHandler = (req: Request, ctx: object) => Promise<Response>
 type Accumulate<
   Entries extends readonly AnyEntry[],
   Ctx,
-> = Entries extends readonly [Entry<infer C, object>, ...infer Rest]
+> = Entries extends readonly [Entry<infer C, object, string>, ...infer Rest]
   ? Rest extends readonly AnyEntry[]
     ? Accumulate<Rest, Ctx & C>
     : Ctx
@@ -59,12 +61,15 @@ type Duplicated<Contributes, Ctx> =
 /** Prerequisites an entry declares that are not yet on the context. */
 type Unmet<In, Ctx> = Extract<Exclude<keyof In, keyof Ctx>, string>
 
+/** Keys an entry must run before that are already on the context. */
+type Early<Before, Ctx> = Extract<Before & keyof Ctx, string>
+
 /**
  * Validate a tuple of entries in order against a seed context. Each entry's
  * prerequisites (`In`) must be present on the context accumulated so far, with
- * types they accept, and its key must not already be there. Resolves to `true`
- * when the whole chain is valid, or to a descriptive error-string type naming
- * the offending key.
+ * types they accept, its key must not already be there, and neither may a key
+ * it names in `before`. Resolves to `true` when the whole chain is valid, or to
+ * a descriptive error-string type naming the offending key.
  *
  * {@link pipeline} applies it seeded with the context it is placed in, which is
  * {@link BaseContext} at the top level. A composing wrapper that puts its own
@@ -87,13 +92,18 @@ type Unmet<In, Ctx> = Extract<Exclude<keyof In, keyof Ctx>, string>
 export type ValidateEntries<
   Entries extends readonly unknown[],
   Ctx = BaseContext,
-> = Entries extends readonly [Entry<infer C, infer In>, ...infer Rest]
+> = Entries extends readonly [
+  Entry<infer C, infer In, infer Before>,
+  ...infer Rest,
+]
   ? IsAny<Ctx> extends true
     ? ValidateEntries<Rest, Ctx & C>
     : [Duplicated<C, Ctx>] extends [never]
       ? [Unmet<In, Ctx>] extends [never]
         ? [Mistyped<In, Ctx>] extends [never]
-          ? ValidateEntries<Rest, Ctx & C>
+          ? [Early<Before, Ctx>] extends [never]
+            ? ValidateEntries<Rest, Ctx & C>
+            : OutOfOrder<ContributedKeys<C>, Early<Before, Ctx>>
           : Mismatch<Mistyped<In, Ctx>>
         : `middleware-prereq: key '${Unmet<In, Ctx>}' is not yet on the context (check ordering)`
       : Conflict<Duplicated<C, Ctx>>

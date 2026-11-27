@@ -16,12 +16,18 @@
 
 export { defineComposite } from './core/define-composite.js'
 export type {
+  Befores,
   Composite,
   Contributions,
   Prerequisites,
 } from './core/define-composite.js'
 export { defineMiddleware } from './core/define-middleware.js'
-export type { IsAny, Middleware, NoConflict } from './core/define-middleware.js'
+export type {
+  InOrder,
+  IsAny,
+  Middleware,
+  NoConflict,
+} from './core/define-middleware.js'
 export { pipeline } from './core/pipeline.js'
 export type { ValidateEntries } from './core/pipeline.js'
 export {
@@ -42,5 +48,6 @@ export type {
   Conflict,
   ContributedKeys,
   Entry,
+  OutOfOrder,
   SingleKeyEntry,
 } from './core/types.js'

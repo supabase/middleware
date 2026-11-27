@@ -113,10 +113,11 @@ export default {
 }
 ```
 
-Two type-level guarantees, with no runtime cost:
+Three type-level guarantees, the first two with no runtime cost:
 
 - **Collision detection.** Two middleware contributing the same key fail to compile, with an error naming the key on the offending call. `pipeline` checks this from the entries array. Nested handlers need `satisfies FetchHandler` on the outermost call — one annotation covers any depth — and without it the duplicate compiles silently and the inner contribution wins at runtime.
 - **Prerequisite enforcement.** A middleware can declare upstream keys it needs (e.g. a database middleware that needs `jwtClaims` from an upstream auth middleware). Any layer further out can supply them, at any distance and with no annotation, and the contribution's type has to match — not just the key name. If **nothing** supplies it, the stack keeps a _required_ `ctx`, which fails only where it is checked against `FetchHandler`. A bare `export default { fetch: app }` is no such check, so it compiles and throws `TypeError` on the first request — annotate the outermost call with `satisfies FetchHandler` (or put the stack in any `FetchHandler`-typed position) to catch it at build time.
+- **Ordering.** A middleware can declare keys it must run before, such as OAuth discovery, which has to answer before an auth gate contributes `authMode`. Placing it inside anything that contributes one fails to compile: `pipeline` checks it from the entries array, and nesting wherever it checks a collision. Each layer also passes these rules outward when the stack is built, so the layer that contributes the key throws at startup, at any distance and with no types.
 
 ### Composing by nesting
 

@@ -43,6 +43,7 @@
     "Accumulate",
     "Mistyped",
     "Seed",
-    "Mismatch"
+    "Mismatch",
+    "Early"
   ]
 }

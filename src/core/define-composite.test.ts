@@ -4,6 +4,7 @@ import { defineComposite } from './define-composite.js'
 import { defineMiddleware } from './define-middleware.js'
 import { pipeline } from './pipeline.js'
 import type {
+  Befores,
   Conflict,
   Contributions,
   FetchHandler,
@@ -410,6 +411,81 @@ describe('defineComposite — nested composites', () => {
       innerOk,
     )
     void handler
+  })
+})
+
+describe('defineComposite — before', () => {
+  const withDiscovery = defineMiddleware({
+    key: 'discovery',
+    before: ['authMode'],
+    run: (config: { url: string } | undefined) => async () => ({
+      discovery: { url: config?.url ?? '/meta' },
+    }),
+  })
+  const discoveryBundle = defineComposite({
+    build: () => [withDiscovery(), passing('extra', 1)()] as const,
+  })
+  const outOfOrder =
+    /'discovery' must run before anything that contributes 'authMode'/
+
+  it('carries every part’s `before` keys', () => {
+    const _keys: Befores<
+      readonly [ReturnType<typeof withDiscovery>, ReturnType<typeof withMode>]
+    > = 'authMode'
+    void _keys
+  })
+
+  it('fails to compile and to build inside a layer that contributes a part’s key', () => {
+    expect(() =>
+      pipeline(
+        [withAuth({ mode: 'none' }), discoveryBundle()],
+        // @ts-expect-error — middleware-order, once per key the bundle contributes: '…' must run before anything that contributes 'authMode'
+        innerOk,
+      ),
+    ).toThrow(outOfOrder)
+    expect(
+      () =>
+        withAuth(
+          { mode: 'none' },
+          // @ts-expect-error — middleware-order, once per key the bundle contributes: '…' must run before anything that contributes 'authMode'
+          discoveryBundle(innerOk),
+        ) satisfies FetchHandler,
+    ).toThrow(outOfOrder)
+  })
+
+  it('checks the handler it wraps against its parts, through its internal-key boundary', () => {
+    // withAuth strips `auth` at its boundary; the boundary still carries the
+    // wrapped handler's rules to the parts.
+    expect(
+      () =>
+        withAuth(
+          { mode: 'none' },
+          // @ts-expect-error — middleware-order: 'discovery' must run before anything that contributes 'authMode'
+          withDiscovery(innerOk),
+        ) satisfies FetchHandler,
+    ).toThrow(outOfOrder)
+  })
+
+  it('throws when its own parts are in the wrong order', () => {
+    const wrongInside = defineComposite({
+      build: () => [withMode(), withDiscovery()] as const,
+    })
+    expect(() =>
+      pipeline(
+        [passing('auth', { mode: 'none', sub: 's' })(), wrongInside()],
+        innerOk,
+      ),
+    ).toThrow(outOfOrder)
+  })
+
+  it('builds and runs in the right order', async () => {
+    const app = discoveryBundle(
+      withAuth({ mode: 'none' }, async (_req, ctx) =>
+        Response.json([ctx.discovery.url, ctx.extra, ctx.authMode]),
+      ),
+    ) satisfies FetchHandler
+    const res = await app(new Request('http://localhost/'))
+    expect(await res.json()).toEqual(['/meta', 1, 'none'])
   })
 })
 

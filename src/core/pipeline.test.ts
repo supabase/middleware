@@ -218,6 +218,41 @@ describe('type guarantees (tsc-verified)', () => {
     void _bad
   })
 
+  it('before: an entry after one that contributes its `before` key fails to compile and to build', () => {
+    const withGate = passing('gate', { mode: 'user' })
+    const withA = passing('alpha', { v: 1 })
+    const withDiscovery = defineMiddleware({
+      key: 'discovery',
+      before: ['gate'],
+      run: (config: { url: string } | undefined) => async () => ({
+        discovery: { url: config?.url ?? '/meta' },
+      }),
+    })
+    const outOfOrder =
+      /middleware-order: 'discovery' must run before anything that contributes 'gate'/
+
+    expect(() =>
+      pipeline(
+        [withGate(), withDiscovery()],
+        // @ts-expect-error — middleware-order: 'discovery' must run before anything that contributes 'gate'
+        innerOk,
+      ),
+    ).toThrow(outOfOrder)
+    expect(() =>
+      pipeline(
+        [withGate(), withA(), withDiscovery()],
+        // @ts-expect-error — middleware-order: 'discovery' must run before anything that contributes 'gate'
+        innerOk,
+      ),
+    ).toThrow(outOfOrder)
+
+    const _ok = pipeline(
+      [withDiscovery(), withA(), withGate()],
+      async (_req, ctx) => Response.json([ctx.discovery.url, ctx.gate.mode]),
+    ) satisfies FetchHandler
+    void _ok
+  })
+
   it('does not let a host-supplied env (arg 2) leak into ctx', async () => {
     const withA = passing('a', { v: 1 })
     const handler = pipeline([withA()], async (_req, ctx) =>
@@ -430,6 +465,27 @@ describe('pipeline in a handler position', () => {
     void _bad
   })
 
+  it('before: an enclosing layer that contributes the key fails to compile and to build', () => {
+    const withFirst = defineMiddleware({
+      key: 'first',
+      before: ['a'],
+      run: (config: { on: boolean } | undefined) => async () => ({
+        first: config?.on ?? true,
+      }),
+    })
+
+    expect(
+      () =>
+        withA(
+          pipeline(
+            [withB(), withFirst()],
+            // @ts-expect-error — middleware-order: 'first' must run before anything that contributes 'a'
+            innerOk,
+          ),
+        ) satisfies FetchHandler,
+    ).toThrow(/'first' must run before anything that contributes 'a'/)
+  })
+
   it('prerequisite: an enclosing provider of the wrong type does not meet it', () => {
     const withANumber = defineMiddleware<
       'a',
@@ -475,6 +531,20 @@ describe('ValidateEntries (exported, tsc-verified)', () => {
     > =
       "middleware-prereq: key 'auth' is on the upstream context with an incompatible type"
     void _msg
+  })
+
+  it('reports an ordering error when the seed already carries a `before` key', () => {
+    type FirstEntry = SingleKeyEntry<
+      'first',
+      Record<never, never>,
+      boolean,
+      'auth'
+    >
+    const _msg: ValidateEntries<[FirstEntry], { auth: { userId: string } }> =
+      "middleware-order: 'first' must run before anything that contributes 'auth'"
+    const _ok: ValidateEntries<[FirstEntry]> = true
+    void _msg
+    void _ok
   })
 
   it('reports a conflict when the seed already carries the entry key', () => {

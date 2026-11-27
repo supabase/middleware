@@ -3,11 +3,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { withCors } from '../middleware/cors/with-cors.js'
 import { withFeatureFlag } from '../middleware/feature-flag/with-feature-flag.js'
 import { defineMiddleware } from './define-middleware.js'
-import type { NoConflict } from './define-middleware.js'
+import type { InOrder, Middleware, NoConflict } from './define-middleware.js'
 import { pipeline } from './pipeline.js'
 import type { BaseContext, FetchHandler } from './runtime.js'
 import { getEnv, seedContext } from './runtime.js'
-import type { Conflict, SingleKeyEntry } from './types.js'
+import type { Conflict, OutOfOrder, SingleKeyEntry } from './types.js'
 
 const innerOk = async () => Response.json({ ok: true })
 
@@ -1116,5 +1116,244 @@ describe('a middleware with a hand-written signature (tsc-verified)', () => {
       }),
     )
     void _app
+  })
+
+  it('a middleware with `before` nested inside it, in the right order, sees its key', () => {
+    const withFirst = defineMiddleware({
+      key: 'first',
+      before: ['gate'],
+      run: (config: { at: number } | undefined) => async () => ({
+        first: { at: config?.at ?? 1 },
+      }),
+    })
+
+    const _app = withTag(
+      { label: 'x' },
+      withFirst(async (_req, ctx) => {
+        const tag: string = ctx.tag
+        const at: number = ctx.first.at
+        return Response.json({ tag, at })
+      }),
+    )
+    void _app
+  })
+})
+
+// ---------------------------------------------------------------------------
+// `before`: a middleware that must run outside anything contributing a key. The
+// types catch a wrong order wherever a collision is caught, plus under a
+// hand-written signature that contributes the key; the build-time check catches
+// it at any distance, for callers without types.
+// ---------------------------------------------------------------------------
+describe('before', () => {
+  const withGate = passing('gate', { mode: 'user' })
+  const withA = passing('alpha', { v: 1 })
+  const withB = passing('beta', { v: 2 })
+  const withDiscovery = defineMiddleware({
+    key: 'discovery',
+    before: ['gate'],
+    run: (config: { url: string } | undefined) => async () => ({
+      discovery: { url: config?.url ?? '/meta' },
+    }),
+  })
+  const outOfOrder =
+    /middleware-order: 'discovery' must run before anything that contributes 'gate'/
+
+  /** The same call without its types, as a JavaScript caller makes it. */
+  const untyped = (fn: unknown) => fn as (...args: unknown[]) => unknown
+
+  /** Shaped like `withSupabase`: one handler form, `Base` with a default. */
+  type WithHandWrittenGate = <Base extends BaseContext = BaseContext>(
+    config: { label: string },
+    handler: (
+      req: Request,
+      ctx: NoInfer<Base> & { gate: { mode: string } },
+    ) => Promise<Response>,
+  ) => (req: Request, ctx?: Base) => Promise<Response>
+  const withHandWrittenGate = defineMiddleware<
+    'gate',
+    { label: string },
+    Record<never, never>,
+    { mode: string }
+  >({
+    key: 'gate',
+    run: () => async () => ({ gate: { mode: 'user' } }),
+  }) as unknown as WithHandWrittenGate
+
+  it('throws when the stack is built with a contributing layer outside it, at any distance', () => {
+    expect(() => untyped(withGate)(withDiscovery(innerOk))).toThrow(outOfOrder)
+    expect(() =>
+      untyped(withGate)(withA(withB(withDiscovery(innerOk)))),
+    ).toThrow(outOfOrder)
+    expect(() =>
+      untyped(withHandWrittenGate)(
+        { label: 'x' },
+        withA(withDiscovery(innerOk)),
+      ),
+    ).toThrow(outOfOrder)
+  })
+
+  it('throws in a pipeline, and across the two forms', () => {
+    expect(() =>
+      untyped(pipeline)([withGate(), withA(), withDiscovery()], innerOk),
+    ).toThrow(outOfOrder)
+    expect(() =>
+      untyped(pipeline)([withGate()], withA(withDiscovery(innerOk))),
+    ).toThrow(outOfOrder)
+    expect(() =>
+      untyped(withGate)(pipeline([withA(), withDiscovery()], innerOk)),
+    ).toThrow(outOfOrder)
+  })
+
+  it('reads rules set by another copy of the package', () => {
+    const handler = Object.defineProperty(
+      async () => Response.json({ ok: true }),
+      Symbol.for('@supabase/middleware:before'),
+      { value: new Map([['gate', 'discovery']]) },
+    )
+    expect(() => untyped(withGate)(handler)).toThrow(outOfOrder)
+  })
+
+  it('builds and runs in the right order, at any distance', async () => {
+    const nested = withDiscovery(
+      withA(
+        withGate(async (_req, ctx) =>
+          Response.json([ctx.discovery.url, ctx.alpha.v, ctx.gate.mode]),
+        ),
+      ),
+    ) satisfies FetchHandler
+    const flat = pipeline(
+      [withDiscovery(), withA(), withGate()],
+      async (_req, ctx) =>
+        Response.json([ctx.discovery.url, ctx.alpha.v, ctx.gate.mode]),
+    )
+    for (const app of [nested, flat]) {
+      const res = await app(new Request('http://localhost/'))
+      expect(await res.json()).toEqual(['/meta', 1, 'user'])
+    }
+  })
+
+  it('types: a host argument is accepted as an object literal or an interface', async () => {
+    interface ServeInfo {
+      remoteAddr: { hostname: string }
+    }
+    const info: ServeInfo = { remoteAddr: { hostname: 'localhost' } }
+    const app = withDiscovery(withGate(innerOk))
+    const literal = await app(new Request('http://localhost/'), {
+      DB_URL: 'postgres://',
+    })
+    const served = await app(new Request('http://localhost/'), info)
+    expect([literal.status, served.status]).toEqual([200, 200])
+  })
+
+  it('a generator middleware with explicit type arguments passes `Before` too', async () => {
+    const withTimed = defineMiddleware<
+      'timed',
+      void,
+      Record<never, never>,
+      { start: number },
+      'gate'
+    >({
+      key: 'timed',
+      before: ['gate'],
+      run: () =>
+        async function* () {
+          const res = yield { timed: { start: 0 } }
+          res.headers.set('x-timed', '1')
+          return res
+        },
+    })
+    expect(() => untyped(withGate)(withTimed(innerOk))).toThrow(
+      /'timed' must run before anything that contributes 'gate'/,
+    )
+    const res = await withTimed(withGate(innerOk))(
+      new Request('http://localhost/'),
+    )
+    expect(res.headers.get('x-timed')).toBe('1')
+  })
+
+  it('types: `before` keys are inferred, with no type arguments', () => {
+    const _typed: Middleware<
+      'discovery',
+      { url: string } | undefined,
+      Record<never, never>,
+      { url: string },
+      'gate'
+    > = withDiscovery
+    void _typed
+  })
+
+  it('types: the guard resolves to the sentinel string, verbatim', () => {
+    const _msg: InOrder<'discovery', 'gate', { gate: unknown }, never> =
+      "middleware-order: 'discovery' must run before anything that contributes 'gate'"
+    const _exact: OutOfOrder<'discovery', 'gate'> = _msg
+    void _exact
+  })
+
+  // Each wrong order below also throws when built, so these pin both halves.
+  it('types: a wrong order fails to compile when anchored, adjacent and at distance', () => {
+    expect(
+      () =>
+        // @ts-expect-error — middleware-order: 'discovery' must run before anything that contributes 'gate'
+        withGate(withDiscovery(innerOk)) satisfies FetchHandler,
+    ).toThrow(outOfOrder)
+    expect(
+      () =>
+        // @ts-expect-error — middleware-order: 'discovery' must run before anything that contributes 'gate'
+        withGate(withA(withB(withDiscovery(innerOk)))) satisfies FetchHandler,
+    ).toThrow(outOfOrder)
+  })
+
+  // Further in, a hand-written outer is caught by types only for some shapes
+  // before TypeScript 5.9; the build-time test above covers every distance.
+  it('types: a wrong order fails to compile directly inside a hand-written signature that contributes the key', () => {
+    expect(() =>
+      withHandWrittenGate(
+        { label: 'x' },
+        // @ts-expect-error — the produced ctx marks 'gate' with the middleware-order sentinel
+        withDiscovery(innerOk),
+      ),
+    ).toThrow(outOfOrder)
+    expect(() =>
+      withHandWrittenGate(
+        { label: 'x' },
+        // @ts-expect-error — the produced ctx marks 'gate' with the middleware-order sentinel
+        withDiscovery(async (_r, c) => Response.json(c.discovery)),
+      ),
+    ).toThrow(outOfOrder)
+  })
+
+  it('types: the right order types every key, anchored or not', () => {
+    const _anchored = withDiscovery(
+      withA(
+        withHandWrittenGate({ label: 'x' }, async (_req, ctx) =>
+          Response.json([ctx.discovery.url, ctx.alpha.v, ctx.gate.mode]),
+        ),
+      ),
+    ) satisfies FetchHandler
+    const _unanchored = withA(
+      withDiscovery(async (_req, ctx) =>
+        Response.json([ctx.alpha.v, ctx.discovery.url]),
+      ),
+    )
+    void _anchored
+    void _unanchored
+  })
+
+  it('types: an entry annotation without `Before` is refused, not silently dropped', () => {
+    const _kept: SingleKeyEntry<
+      'discovery',
+      Record<never, never>,
+      { url: string },
+      'gate'
+    > = withDiscovery()
+    // @ts-expect-error — the entry carries `before: ['gate']`; this annotation drops it
+    const _dropped: SingleKeyEntry<
+      'discovery',
+      Record<never, never>,
+      { url: string }
+    > = withDiscovery()
+    void _kept
+    void _dropped
   })
 })
