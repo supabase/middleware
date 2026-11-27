@@ -38,6 +38,32 @@ export type Conflict<Key extends string> =
   `middleware-conflict: key '${Key}' is already present on the upstream context`
 
 /**
+ * Sentinel type for a prerequisite whose key is on the upstream context with a
+ * type the prerequisite does not accept. `ValidateEntries` sites it on the
+ * handler parameter of a {@link pipeline}, like {@link Conflict}.
+ */
+export type Mismatch<Key extends string> =
+  `middleware-prereq: key '${Key}' is on the upstream context with an incompatible type`
+
+/**
+ * Keys `Need` declares that `Have` carries with a type `Need` does not accept.
+ * A key `Have` lacks is not reported here: that is an unmet prerequisite, not a
+ * mismatched one. A {@link Widened} `Have` is skipped, as conflict detection
+ * skips a widened entry: its index signature would report every key.
+ */
+export type Mistyped<Need, Have> =
+  Widened<Have> extends true
+    ? never
+    : Extract<
+        {
+          [K in keyof Need & keyof Have]-?: [Have[K]] extends [Need[K]]
+            ? never
+            : K
+        }[keyof Need & keyof Have],
+        string
+      >
+
+/**
  * Config arg is optional exactly when the middleware's Config admits `undefined`.
  * Used by both `defineMiddleware` (to type the config-only overload) and
  * `pipeline` (internally).

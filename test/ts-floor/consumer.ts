@@ -86,10 +86,33 @@ const _flat = pipeline(
 )
 void _flat
 
+// A `pipeline` in a middleware's handler argument sees the enclosing keys once
+// the outermost call is anchored, the way a nested middleware call does.
+const _flatInNested = withA(
+  pipeline([withB()], async (_req, ctx) => {
+    const a: number = ctx.alpha.v
+    const b: number = ctx.beta.v
+    void a
+    void b
+    return Response.json({ ok: true })
+  }),
+) satisfies FetchHandler
+void _flatInNested
+
 // A key contributed two layers up must still be caught. This is the check that
 // goes quiet below the floor.
 const withFoo = passing('foo', { v: 1 })
 const withBar = passing('bar', { v: 2 })
+
+// The same across the boundary between a middleware and a `pipeline`.
+const _flatCollision = withFoo(
+  pipeline(
+    [withBar(), withFoo()],
+    // @ts-expect-error — the entry `withFoo` shadows 'foo' from the enclosing layer
+    innerOk,
+  ),
+) satisfies FetchHandler
+void _flatCollision
 
 const _collision =
   // @ts-expect-error — innermost `withFoo` shadows 'foo' from two layers up

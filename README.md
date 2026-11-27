@@ -120,7 +120,7 @@ Two type-level guarantees, with no runtime cost:
 
 ### Composing by nesting
 
-`pipeline` is optional. Every middleware also takes the next handler directly, as `withFoo(config, handler)`. Nesting those calls builds the same handler, with the same accumulation and the same prerequisite enforcement, at any depth.
+`pipeline` is optional. Every middleware also takes the next handler directly, as `withFoo(config, handler)`. Nesting those calls builds the same handler, with the same accumulation and the same prerequisite enforcement, at any depth. The forms mix: a `pipeline` can be a middleware's handler argument. Once the outermost call is anchored with `satisfies FetchHandler` (or sits in any `FetchHandler`-typed position, such as `Deno.serve(…)`), its handler sees every key the layers around it contribute, exactly as a nested call would, and its entries are checked against those keys. That holds for middleware built with `defineMiddleware` or `defineComposite`. One that publishes a hand-written type signature instead, such as `withSupabase` from `@supabase/server`, doesn't pass its keys to a `pipeline` written as its handler argument; put it in the `pipeline` array instead.
 
 ```ts
 import type { FetchHandler } from '@supabase/middleware'
@@ -138,7 +138,7 @@ export default {
 }
 ```
 
-Nesting asks one thing of you: keep `satisfies FetchHandler` on the outermost call. That anchor turns on collision detection and the build-time prerequisite check, as the bullets above describe. `ctx` accumulation needs no annotation at any depth.
+Nesting asks one thing of you: keep `satisfies FetchHandler` on the outermost call. That anchor turns on collision detection and the build-time prerequisite check, as the bullets above describe, and gives a `pipeline` in a middleware's handler argument the keys around it. `ctx` accumulation through nested middleware needs no annotation at any depth.
 
 `FetchHandler` is a type, so importing it adds no runtime code. The [authoring guide](./docs/authoring-guide.md) tells middleware authors to re-export it from their own package. Compose only middleware from packages that do, and your handler file imports nothing from `@supabase/middleware`. Your `package.json` never lists it either. Composition comes free with the middleware themselves.
 

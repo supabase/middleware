@@ -182,8 +182,13 @@ export interface Composite<
  * @category Composition
  */
 export function defineComposite<
-  Config,
-  const Entries extends readonly AnyEntry[],
+  // A `build` with no parameter leaves nothing to infer `Config` from; `void`
+  // types that composite like a config-less middleware, so the handler can be
+  // its only argument and a call nested there still sees the composite's keys.
+  // `Entries` is always inferred: its default only satisfies TypeScript's rule
+  // that defaulted type parameters come last.
+  Config = void,
+  const Entries extends readonly AnyEntry[] = readonly AnyEntry[],
   const Internal extends readonly (keyof Contributions<Entries> & string)[] =
     [],
 >(spec: {

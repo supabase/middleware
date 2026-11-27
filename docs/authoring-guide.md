@@ -54,6 +54,15 @@ buys you is that `FetchHandler` is a _type_, so a consumer composing only
 third-party middleware needs no runtime import from `@supabase/middleware` at
 all — which is exactly why §2 re-exports the type from your own package.
 
+The two forms also mix. A `pipeline` can be a middleware's handler argument.
+With the outermost call anchored, its handler sees every key the layers around
+it contribute, exactly as a nested call would, and its entries are checked
+against those keys too. That holds for middleware built with `defineMiddleware`
+or `defineComposite`, as everything in this guide is. One published with a
+[hand-written signature](#variant-a-hand-written-signature) doesn't pass its
+keys to a `pipeline` written as its handler argument; consumers list it in the
+`pipeline` array instead.
+
 The rest of this guide uses `pipeline`.
 
 ### Which form do you need?
@@ -1310,6 +1319,12 @@ seeding, request buffering and contribution extraction. The published type is
 an interface with the engine's three call forms written out, and the value is
 cast to it. The [`NoConflict` docblock](../src/core/define-middleware.ts)
 sanctions this.
+
+One thing the engine's own types give that a hand-written signature does not: a
+`pipeline` written as its handler argument doesn't see its key.
+`withRequestLog({ log }, pipeline([…], handler))` types the pipeline's handler
+without `ctx.requestLog`. Consumers who need both list `withRequestLog` in the
+`pipeline` array instead.
 
 The runtime:
 
