@@ -123,27 +123,23 @@ export type Handler<Ctx extends BaseContext = BaseContext> = (
  * `Deno.serve(app)`, and so on.
  *
  * Annotating the outermost handler with this (`… satisfies FetchHandler`) is
- * optional and adds no runtime code. It does two things:
+ * optional and adds no runtime code. It **asserts the stack can be the `fetch`
+ * export.** Prerequisites are enforced between layers with no annotation. What
+ * is left over is the case where *no* layer supplies a declared `In` key: the
+ * requirement is republished all the way out, so the stack has a **required**
+ * `ctx`. That alone is not an error — a required `ctx` is only wrong where the
+ * stack is handed to the host, and this type is what makes that position
+ * explicit (its `ctx` is optional, and a required one is not assignable to it).
+ * An untyped `export default { fetch: app }` checks nothing, so without the
+ * annotation the stack compiles, ships, and reads `undefined` off `ctx` on the
+ * first request. Any `FetchHandler`-typed position does the same job.
  *
- * - **Asserts the stack can be the `fetch` export.** Prerequisites are enforced
- *   between layers with no annotation. What is left over is the case where *no*
- *   layer supplies a declared `In` key: the requirement is republished all the
- *   way out, so the stack has a **required** `ctx`. That alone is not an error —
- *   a required `ctx` is only wrong where the stack is handed to the host, and
- *   this type is what makes that position explicit (its `ctx` is optional, and a
- *   required one is not assignable to it). An untyped
- *   `export default { fetch: app }` checks nothing, so without the annotation
- *   the stack compiles, ships, and reads `undefined` off `ctx` on the first
- *   request. Any `FetchHandler`-typed position does the same job.
- * - **Turns on collision detection.** Two middleware contributing the same key
- *   are only caught under this annotation; see the `Middleware` overload set.
- *   One annotation on the outermost call covers any nesting depth.
- *
- * It is **not** needed for accumulation: an unannotated outermost call resolves
- * `Base` to its constraint — the empty upstream, the same context an annotation
- * would seed — so the cascade reaches the innermost handler at any depth either
- * way. Nor for `In` prerequisites (those travel outward), nor for
- * {@link pipeline} (which accumulates and validates from its entries array).
+ * It is **not** needed for accumulation or collision detection: an unannotated
+ * outermost call resolves `Base` to its constraint — the empty upstream, the
+ * same context an annotation would seed — so the cascade carries every upstream
+ * key to the innermost handler at any depth either way. Nor for {@link pipeline}
+ * at the top level, which validates its entries array against that same empty
+ * upstream.
  *
  * @category Types
  */

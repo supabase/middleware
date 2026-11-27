@@ -14,13 +14,12 @@
  * behavior is identical to nested handlers, and so are the types: `ctx` is
  * accumulated across the array with no annotation, duplicate keys and unmet
  * prerequisites fail to compile with a descriptive message, and a `pipeline`
- * written where a handler is expected sees the context it is placed in (see
- * {@link pipeline} for when an enclosing middleware's keys are known).
+ * written where a handler is expected sees the context it is placed in.
  *
  * @packageDocumentation
  */
 
-import type { IsAny } from './define-middleware.js'
+import type { IsAny, Upstream } from './define-middleware.js'
 import type { BaseContext } from './runtime.js'
 import type {
   AnyEntry,
@@ -100,13 +99,6 @@ export type ValidateEntries<
   : true
 
 /**
- * `Base`, or the empty upstream ({@link BaseContext}) when `Base` is `never`:
- * what an enclosing middleware's `Base` reads as while it is not yet inferred,
- * in a stack with no anchor.
- */
-type Upstream<Base> = [Base] extends [never] ? BaseContext : Base
-
-/**
  * The upstream a `pipeline` validates and accumulates from: `Base`, unless the
  * position's return type admits more than `Promise<Response>`. A host's `fetch`
  * signature (`Deno.serve`, a Workers `ExportedHandler`) also admits a bare
@@ -125,17 +117,12 @@ type Seed<Base, Out> = [Out] extends [Promise<Response>]
  *
  * The handler's `ctx` is inferred as the upstream plus every entry's
  * contribution — no manual annotation. The upstream is the context the call is
- * placed in: {@link BaseContext} at the top level, and everything that
- * position's `ctx` carries inside another `pipeline`'s handler argument or any
- * position typed as a handler (`(req, ctx: …) => Promise<Response>`).
- *
- * Inside the handler argument of a middleware built with {@link defineMiddleware}
- * or {@link defineComposite}, the enclosing keys are known once the stack is
- * anchored: its outermost call is checked against a handler type, by
- * `satisfies FetchHandler`, a typed declaration, or a host signature such as
- * `Deno.serve`. Unanchored, the upstream there is {@link BaseContext}. A
- * middleware whose type signature is written by hand doesn't pass its keys this
- * way; list it in the entries instead.
+ * placed in: {@link BaseContext} at the top level, and inside the handler
+ * argument of a middleware built with {@link defineMiddleware} or
+ * {@link defineComposite}, another `pipeline`'s, or any position typed as a
+ * handler (`(req, ctx: …) => Promise<Response>`), everything that position's
+ * `ctx` carries. A middleware whose type signature is written by hand doesn't
+ * pass its keys this way; list it in the entries instead.
  *
  * Entries are checked against the upstream, so a key it already has is a
  * collision and a key it supplies meets a prerequisite. A host-typed position
@@ -176,9 +163,9 @@ export function pipeline<
   // A middleware's handler is contextually typed by a separate pass over the
   // return type alone, which TypeScript uses only while no type parameter has
   // an inference. Here `Entries` has one from the first argument, so the handler
-  // is typed from the ordinary inferences instead, where an enclosing
-  // middleware's `Base` reads as `never` until an anchor has supplied it.
-  // `Seed` reads that as the empty upstream.
+  // is typed from the ordinary inferences instead, where an enclosing call's
+  // uninferred `Base` reads as `never`. `Upstream` on every enclosing handler
+  // parameter is what keeps that from erasing the enclosing keys.
   Base extends BaseContext = BaseContext,
   Out = never,
 >(

@@ -730,15 +730,12 @@ describe('four-deep nesting', () => {
 // script) — a regression is a type error or an unused-directive error. A plain
 // vitest run cannot see these.
 //
-// The accumulation cases below carry `satisfies FetchHandler`, but ambient
-// accumulation does not depend on it — an unannotated outermost call resolves
-// `Base` to its constraint, the same empty upstream the annotation would seed,
-// and the cascade proceeds inward from there at any depth. Collision detection
-// is the guarantee that does depend on it: the produced handler type records the
-// upstream a stack requires, never the keys it contributes, so unannotated there
-// is nothing for an enclosing call to check its own key against. The annotation
-// is therefore load-bearing in the `collision:` cases and incidental in the
-// `accumulation:` ones.
+// The accumulation and collision cases below carry `satisfies FetchHandler`,
+// but neither depends on it: an unannotated outermost call resolves `Base` to
+// its constraint, the same empty upstream the annotation would seed, and the
+// cascade carries the upstream inward from there at any depth, keys included.
+// The `unannotated:` cases pin that. What the annotation alone adds is the
+// check that a stack can be the `fetch` export (see the `prerequisite:` cases).
 // ---------------------------------------------------------------------------
 describe('type guarantees (tsc-verified)', () => {
   it('accumulation: the inner handler sees every upstream key, typed', () => {
@@ -913,6 +910,20 @@ describe('type guarantees (tsc-verified)', () => {
     void _entry
   })
 
+  it('unannotated: a collision is caught with no annotation, adjacent or two layers up', () => {
+    const withFoo = passing('foo', { v: 1 })
+    const withBar = passing('bar', { v: 2 })
+
+    const _adjacent =
+      // @ts-expect-error — inner `withFoo` shadows upstream key 'foo'
+      withFoo(withFoo(innerOk))
+    const _twoUp =
+      // @ts-expect-error — innermost `withFoo` shadows 'foo' from two layers up
+      withFoo(withBar(withFoo(innerOk)))
+    void _adjacent
+    void _twoUp
+  })
+
   it('unannotated: a nested handler reads its own contribution', () => {
     const withStamp = defineMiddleware<
       'stamp',
@@ -936,16 +947,17 @@ describe('type guarantees (tsc-verified)', () => {
   })
 
   // -------------------------------------------------------------------------
-  // Unmet `In` prerequisites travel *outward* — the direction opposite to the
-  // anchored cascade, and the one the propagation overload on `Middleware`
-  // exists to serve. Unanchored there is no accumulated `Base` to push inward,
-  // so each layer that does not contribute the required key republishes it as
-  // its own requirement; the stack only typechecks once some layer contributes
-  // it, or fails wherever the stack is checked against `FetchHandler`.
+  // An `In` prerequisite is discharged by whichever layer contributes its key,
+  // at any distance. In a stack written as one expression the cascade carries
+  // the upstream inward to the requirer, anchored or not. A layer typed on its
+  // own and wrapped later had no upstream to carry in, so its requirement
+  // travels *outward* instead, through the propagation overload: each layer
+  // that does not contribute the key republishes it, until one does or the
+  // stack is checked against `FetchHandler` and fails. The `across
+  // declarations:` cases pin that direction.
   //
-  // Distance between provider and requirer is the axis these pin: the earlier
-  // signature discharged a prerequisite only from the immediately enclosing
-  // layer, so the two-layer case is the regression guard.
+  // Distance between provider and requirer is the axis these pin, so the
+  // two-layer case is the regression guard.
   // -------------------------------------------------------------------------
   const withNeedsAlpha = defineMiddleware<
     'needsAlpha',
@@ -1039,6 +1051,61 @@ describe('type guarantees (tsc-verified)', () => {
       // @ts-expect-error — alpha.v is string, but the prerequisite wants number
       withA(withB(withNeedsAlpha(innerOk)))
     void _bad
+  })
+
+  it('prerequisite: anchored, a provider of the wrong type two layers up does not discharge it', () => {
+    // Anchored, `withB` republishes the requirement intersected with its
+    // upstream's `alpha: { v: string }`. The intersection is a subtype of what
+    // `withA` contributes, so `withA` has to check its contribution against the
+    // requirement, not the requirement against its contribution.
+    const withA = passing('alpha', { v: 'one' })
+    const withB = passing('beta', { v: 2 })
+
+    const _bad =
+      // @ts-expect-error — middleware-prereq: key 'alpha' is on the upstream context with an incompatible type
+      withA(withB(withNeedsAlpha(innerOk))) satisfies FetchHandler
+    void _bad
+  })
+
+  it('prerequisite: across declarations, the requirement travels outward to a provider', () => {
+    const withA = passing('alpha', { v: 1 })
+    const withB = passing('beta', { v: 2 })
+
+    const inner = withB(withNeedsAlpha(innerOk))
+    const _app = withA(inner) satisfies FetchHandler
+    void _app
+  })
+
+  it('prerequisite: across declarations, a provider of the wrong type does not discharge it', () => {
+    const withA = passing('alpha', { v: 'one' })
+    const withB = passing('beta', { v: 2 })
+
+    const inner = withB(withNeedsAlpha(innerOk))
+    const _bad =
+      // @ts-expect-error — alpha.v is string, but the prerequisite wants number
+      withA(inner)
+    void _bad
+  })
+
+  it('prerequisite: a handler that needs more of a key than `In` declares still travels outward', () => {
+    // `In` asks only for `claims.role`; the handler also reads `claims.sub`.
+    // The combined requirement is the intersection, and a provider of the full
+    // claims meets it.
+    const withChecked = defineMiddleware<
+      'checked',
+      void,
+      { claims: { role?: string } },
+      true
+    >({ key: 'checked', run: () => async () => ({ checked: true }) })
+    const withClaims = passing('claims', { sub: 'u1', role: 'authenticated' })
+    const handler = async (
+      _req: Request,
+      ctx: { claims: { sub: string; role?: string }; checked: true },
+    ) => Response.json({ sub: ctx.claims.sub, checked: ctx.checked })
+
+    const inner = withChecked(handler)
+    const _app = withClaims(inner) satisfies FetchHandler
+    void _app
   })
 
   it('prerequisite: the leaf handler still sees an exact ctx inside a travelling stack', () => {
