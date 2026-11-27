@@ -17,10 +17,11 @@
  * @packageDocumentation
  */
 
-import type { NoConflict } from './define-middleware.js'
+import type { Absent, InOrder, NoConflict } from './define-middleware.js'
+import { carryRules } from './order.js'
 import { isContext } from './runtime.js'
 import type { BaseContext } from './runtime.js'
-import type { AnyEntry, ConfigArgs, Entry } from './types.js'
+import type { AnyEntry, ConfigArgs, ContributedKeys, Entry } from './types.js'
 
 type AnyHandler = (req: Request, ctx: object) => Promise<Response>
 
@@ -34,7 +35,7 @@ type UpstreamInternal = Record<string, unknown>
 export type Contributions<
   Entries extends readonly AnyEntry[],
   Ctx = Record<never, never>,
-> = Entries extends readonly [Entry<infer C, object>, ...infer Rest]
+> = Entries extends readonly [Entry<infer C, object, string>, ...infer Rest]
   ? Rest extends readonly AnyEntry[]
     ? Contributions<Rest, Ctx & C>
     : Ctx
@@ -52,20 +53,42 @@ export type Prerequisites<
   Entries extends readonly AnyEntry[],
   Ctx = Record<never, never>,
   Need = Record<never, never>,
-> = Entries extends readonly [Entry<infer C, infer In>, ...infer Rest]
+> = Entries extends readonly [Entry<infer C, infer In, string>, ...infer Rest]
   ? Rest extends readonly AnyEntry[]
     ? Prerequisites<Rest, Ctx & C, Need & Omit<In, keyof Ctx>>
     : Need
   : Need
 
 /**
+ * Fold a tuple of entries into the union of the keys their parts must run
+ * before — the composite's own `before`, since all of its parts run wherever
+ * it is placed.
+ */
+export type Befores<
+  Entries extends readonly AnyEntry[],
+  Acc extends string = never,
+> = Entries extends readonly [
+  Entry<object, object, infer Before extends string>,
+  ...infer Rest,
+]
+  ? Rest extends readonly AnyEntry[]
+    ? Befores<Rest, Acc | Before>
+    : Acc
+  : Acc
+
+/**
  * The produced handler shape, mirroring {@link defineMiddleware}'s: `ctx` is
  * optional when the composite has no outstanding prerequisites (so it can be
  * the `fetch` export and self-seed), required when it has.
  */
-type Produced<Base, In> = keyof In extends never
-  ? (req: Request, ctx?: Base) => Promise<Response>
-  : (req: Request, ctx: Base) => Promise<Response>
+type Produced<
+  Base,
+  In,
+  Who extends string,
+  Before extends string,
+> = keyof In extends never
+  ? (req: Request, ctx?: Absent<Who, Before, Base>) => Promise<Response>
+  : (req: Request, ctx: Absent<Who, Before, Base>) => Promise<Response>
 
 type CompositeArgs<Config, Handler> = undefined extends Config
   ? [handler: Handler] | [config: Config, handler: Handler]
@@ -85,6 +108,7 @@ export interface Composite<
   Contributes extends object,
   Config,
   In extends object,
+  Before extends string = never,
 > {
   // Handler call, cascade form. `Base` flows inward from the contextual return
   // type; `NoInfer` keeps the handler argument a dead inference site so the
@@ -96,10 +120,15 @@ export interface Composite<
       NoConflict<
         Contributes,
         Base,
-        (req: Request, ctx: NoInfer<Base> & Contributes) => Promise<Response>
+        InOrder<
+          ContributedKeys<Contributes>,
+          Before,
+          Base,
+          (req: Request, ctx: NoInfer<Base> & Contributes) => Promise<Response>
+        >
       >
     >
-  ): Produced<Base, In>
+  ): Produced<Base, In, ContributedKeys<Contributes>, Before>
   // Handler call, propagation form. `Ctx` is read outward off the wrapped
   // handler and republished minus everything this composite contributes.
   // `Partial<Contributes>` is the record analogue of the single-key
@@ -114,15 +143,22 @@ export interface Composite<
       NoConflict<
         Contributes,
         Base,
-        (req: Request, ctx: Ctx) => Promise<Response>
+        InOrder<
+          ContributedKeys<Contributes>,
+          Before,
+          Base,
+          (req: Request, ctx: Ctx) => Promise<Response>
+        >
       >
     >
   ): Produced<
     Base & Omit<Ctx, keyof Contributes>,
-    In & Omit<Ctx, keyof Contributes>
+    In & Omit<Ctx, keyof Contributes>,
+    ContributedKeys<Contributes>,
+    Before
   >
   // Config-only call — returns the Entry for a `pipeline` array.
-  (...args: ConfigArgs<Config>): Entry<Contributes, In>
+  (...args: ConfigArgs<Config>): Entry<Contributes, In, Before>
 }
 
 /**
@@ -135,7 +171,8 @@ export interface Composite<
  * **cannot over-declare** — and `internal` may only name a key some part
  * actually contributes. Prerequisites are derived the same way — a part's `In` that an
  * earlier part contributes is discharged internally, and anything outstanding
- * becomes the composite's own `In`.
+ * becomes the composite's own `In`. Its `before` is every key a part names in
+ * `before`.
  *
  * At runtime the parts fold exactly as `pipeline` folds them, each merging its
  * own single key. A part that short-circuits therefore does so from *inside* the
@@ -197,7 +234,8 @@ export function defineComposite<
 }): Composite<
   Omit<Contributions<Entries>, Internal[number]>,
   Config,
-  Prerequisites<Entries>
+  Prerequisites<Entries>,
+  Befores<Entries>
 > {
   // One marker per composite, so a nested composite cannot overwrite the
   // snapshot an enclosing one is relying on.
@@ -219,16 +257,15 @@ export function defineComposite<
     const handler = lastArg as AnyHandler
     const internal = spec.internal ?? []
 
-    // Strip at the boundary rather than only omitting from the type, or the
-    // declaration would be a lie and this composite's plumbing would shadow a
-    // same-named key further down. Where the upstream had the name, put its
-    // value back: internal keys are scoped to the composite, not removed from
-    // the stack. The spread carries the context marker, so the result is still
-    // a valid upstream context.
+    // Strip at the boundary rather than only omitting from the type, or this
+    // composite's plumbing would shadow a same-named key further down. Where the
+    // upstream had the name, put its value back: internal keys are scoped to the
+    // composite. The spread keeps the context marker, and the boundary keeps the
+    // `before` rules of the handler it wraps, so the parts are checked on them.
     const boundary: AnyHandler =
       internal.length === 0
         ? handler
-        : (req, ctx) => {
+        : carryRules<AnyHandler>((req, ctx) => {
             const carried = ctx as Record<symbol, UpstreamInternal | undefined>
             const upstream = carried[snapshotKey]
             const visible = { ...ctx } as Record<string, unknown>
@@ -238,7 +275,7 @@ export function defineComposite<
               else delete visible[key]
             }
             return handler(req, visible)
-          }
+          }, handler)
 
     // The same fold `pipeline` performs. Parts each merge their own key, so a
     // composite needs no multi-key merge of its own.
@@ -255,7 +292,7 @@ export function defineComposite<
     // let a nested composite consume an enclosing one's snapshot. Symbols
     // survive each part's `{ ...ctx }` merge and stay invisible to
     // `Object.keys` and to the type.
-    return (req: Request, arg?: unknown, ...rest: unknown[]) => {
+    return carryRules((req: Request, arg?: unknown, ...rest: unknown[]) => {
       const run = folded as (
         req: Request,
         ctx?: unknown,
@@ -271,11 +308,12 @@ export function defineComposite<
         if (key in upstream) snapshot[key] = upstream[key]
       }
       return run(req, { ...arg, [snapshotKey]: snapshot })
-    }
+    }, folded)
   }
   return callable as unknown as Composite<
     Omit<Contributions<Entries>, Internal[number]>,
     Config,
-    Prerequisites<Entries>
+    Prerequisites<Entries>,
+    Befores<Entries>
   >
 }

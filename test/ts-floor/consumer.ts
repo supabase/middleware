@@ -218,6 +218,45 @@ const _compUnmet =
   _compNeeds(innerOk) satisfies FetchHandler
 void _compUnmet
 
+// --- `before` ---------------------------------------------------------------
+// A middleware that must run outside anything contributing 'authMode'. Its key
+// set is inferred, so the published `.d.ts` must carry it with no annotation.
+
+const withDiscovery = defineMiddleware({
+  key: 'discovery',
+  before: ['authMode'],
+  run: (config: { url: string } | undefined) => async () => ({
+    discovery: { url: config?.url ?? '/meta' },
+  }),
+})
+
+const _orderFlat = pipeline(
+  [withAuth({ mode: 'user' }), withA(), withDiscovery()],
+  // @ts-expect-error — middleware-order: 'discovery' must run before anything that contributes 'authMode'
+  innerOk,
+)
+void _orderFlat
+
+const _orderNested = withAuth(
+  { mode: 'user' },
+  withA(
+    // @ts-expect-error — middleware-order: 'discovery' must run before anything that contributes 'authMode'
+    withDiscovery(innerOk),
+  ),
+) satisfies FetchHandler
+void _orderNested
+
+const _orderRight = withDiscovery(
+  withAuth({ mode: 'user' }, async (_req, ctx) => {
+    const mode: string = ctx.authMode
+    const url: string = ctx.discovery.url
+    void mode
+    void url
+    return Response.json({ ok: true })
+  }),
+) satisfies FetchHandler
+void _orderRight
+
 // --- `Entry` spellings ------------------------------------------------------
 // The record form is the type; `SingleKeyEntry` is the one-key shorthand. Both
 // must resolve to the same thing at the floor.

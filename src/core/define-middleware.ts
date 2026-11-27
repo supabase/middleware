@@ -1,4 +1,11 @@
-import type { ConfigArgs, Conflict, ContributedKeys, Entry } from './types.js'
+import type {
+  ConfigArgs,
+  Conflict,
+  ContributedKeys,
+  Entry,
+  OutOfOrder,
+} from './types.js'
+import { assertInOrder, carryRules } from './order.js'
 import type { BaseContext } from './runtime.js'
 import { bufferRequest, isContext, seedContext } from './runtime.js'
 
@@ -84,10 +91,18 @@ function warnUnhonoredThirdArg(): void {
  *   validates from its entries array; a stack that cannot carry the
  *   annotation is better written flat.
  *
+ * **Running before another middleware.** `before` names keys that must not be
+ * on `ctx` yet when this middleware runs, so it must be placed outside
+ * anything that contributes them. A wrong order fails to compile wherever a
+ * collision would (see {@link InOrder}), and throws when the stack is built
+ * at any distance. Its keys are inferred; with explicit type arguments, pass
+ * them as `Before`.
+ *
  * @typeParam Key - The literal-string key contributed to ctx.
  * @typeParam Config - Configuration object the middleware accepts.
  * @typeParam In - Upstream prerequisites besides {@link BaseContext}. Defaults to none.
  * @typeParam Contribution - Shape of the value placed at `ctx[Key]`.
+ * @typeParam Before - Keys this middleware must run before. Defaults to none.
  *
  * @example
  * ```ts
@@ -116,8 +131,10 @@ export function defineMiddleware<
   Config,
   In extends object = Record<never, never>,
   Contribution = unknown,
+  Before extends string = never,
 >(spec: {
   key: Key
+  before?: readonly Before[]
   run: (
     config: Config,
   ) => (
@@ -130,7 +147,7 @@ export function defineMiddleware<
         Response | void,
         Response
       >
-}): Middleware<Key, Config, In, Contribution> {
+}): Middleware<Key, Config, In, Contribution, Before> {
   const callable = (...args: unknown[]) => {
     const lastArg = args[args.length - 1]
 
@@ -146,15 +163,20 @@ export function defineMiddleware<
           req: Request,
           ctx: object,
         ) => Promise<Response>
-      return wrap as Entry<{ [K in Key]: Contribution }, In>
+      return wrap as Entry<{ [K in Key]: Contribution }, In, Before>
     }
 
     // Handler call — last arg is a function.
     // For config-less middleware `withFoo(handler)` config stays undefined.
     const config = (args.length >= 2 ? args[0] : undefined) as Config
     const handler = lastArg as (req: Request, ctx: object) => Promise<Response>
+    assertInOrder(spec.key, handler)
     const inner = spec.run(config)
-    return async (req: Request, maybeCtx?: object, ...rest: unknown[]) => {
+    const produced = async (
+      req: Request,
+      maybeCtx?: object,
+      ...rest: unknown[]
+    ) => {
       // A parent middleware passes a real context; the host passes a platform
       // value (env / connection info) in the same slot. At the entry (the
       // latter), seed a fresh context so platform arguments never reach `ctx`,
@@ -218,8 +240,15 @@ export function defineMiddleware<
       if (!resumed.done) await gen.return(undefined) // ignore extra yields, run `finally`
       return resumed.value instanceof Response ? resumed.value : response
     }
+    return carryRules(produced, handler, spec.before, spec.key)
   }
-  return callable as unknown as Middleware<Key, Config, In, Contribution>
+  return callable as unknown as Middleware<
+    Key,
+    Config,
+    In,
+    Contribution,
+    Before
+  >
 }
 
 /**
@@ -314,6 +343,40 @@ export type NoConflict<
         >
 
 /**
+ * The ordering check {@link Middleware} applies for the keys named in `before`:
+ * `Handler` when none of `Before` is on `Base`, and otherwise an
+ * {@link OutOfOrder} sentinel naming `Who` and the key. With no `before` it is
+ * `Handler` outright. It reads `Base`, so it fires wherever {@link NoConflict}
+ * does; wrap it inside `NoConflict` on every signature that takes a handler.
+ *
+ * @category Types
+ */
+export type InOrder<
+  Who extends string,
+  Before extends string,
+  Base,
+  Handler,
+> = [Before] extends [never]
+  ? Handler
+  : IsAny<Base> extends true
+    ? Handler
+    : [Extract<Before & keyof Base, string>] extends [never]
+      ? Handler
+      : OutOfOrder<Who, Extract<Before & keyof Base, string>>
+
+/**
+ * A produced handler's `ctx`: `Base`, with each `before` key typed as an
+ * optional {@link OutOfOrder} sentinel. An enclosing layer whose handler type
+ * passes one of those keys then rejects this handler. That catches a layer
+ * whose keys the inner call's `Base` doesn't carry, such as `withSupabase`.
+ */
+export type Absent<Who extends string, Before extends string, Base> = [
+  Before,
+] extends [never]
+  ? Base
+  : Base & { readonly [K in Before]?: OutOfOrder<Who, K> }
+
+/**
  * The produced handler shape.
  *
  * - **No prerequisites** (`In` empty): `ctx` is optional, so the handler is
@@ -324,9 +387,14 @@ export type NoConflict<
  * Both arms are a *single* call signature (not an intersection), which is what
  * preserves contextual `Base` inference through nesting.
  */
-type Produced<Base, In> = keyof In extends never
-  ? (req: Request, ctx?: Base) => Promise<Response>
-  : (req: Request, ctx: Base) => Promise<Response>
+type Produced<
+  Base,
+  In,
+  Who extends string,
+  Before extends string,
+> = keyof In extends never
+  ? (req: Request, ctx?: Absent<Who, Before, Base>) => Promise<Response>
+  : (req: Request, ctx: Absent<Who, Before, Base>) => Promise<Response>
 
 /**
  * The argument list of a produced middleware. When `Config` admits `undefined`
@@ -359,6 +427,11 @@ type MiddlewareArgs<Config, Handler> = undefined extends Config
  * argument to be a dead inference site, and the propagation needs it to be the
  * live one. Splitting them into ordered overloads lets each keep what it needs.
  *
+ * `Before` is the keys named in `before`. Both handler forms wrap the handler
+ * in {@link InOrder} and mark those keys on the produced `ctx` with `Absent`;
+ * the entry carries them for `pipeline`. With no `before`,
+ * every form is exactly what it is without the parameter.
+ *
  * @category Types
  */
 export interface Middleware<
@@ -366,6 +439,7 @@ export interface Middleware<
   Config,
   In extends object,
   Contribution,
+  Before extends string = never,
 > {
   // Handler call, cascade form — listed first so TypeScript's bidirectional
   // generic inference works correctly for nested calls (`withA(withB(handler))`),
@@ -396,13 +470,18 @@ export interface Middleware<
       NoConflict<
         Key,
         Base,
-        (
-          req: Request,
-          ctx: NoInfer<Base> & { [K in Key]: Contribution },
-        ) => Promise<Response>
+        InOrder<
+          Key,
+          Before,
+          Base,
+          (
+            req: Request,
+            ctx: NoInfer<Base> & { [K in Key]: Contribution },
+          ) => Promise<Response>
+        >
       >
     >
-  ): Produced<Base, In>
+  ): Produced<Base, In, Key, Before>
   // Handler call, propagation form — reached only when the cascade overload
   // above fails, which is exactly the unanchored-prerequisite case.
   //
@@ -433,9 +512,18 @@ export interface Middleware<
   >(
     ...args: MiddlewareArgs<
       Config,
-      NoConflict<Key, Base, (req: Request, ctx: Ctx) => Promise<Response>>
+      NoConflict<
+        Key,
+        Base,
+        InOrder<
+          Key,
+          Before,
+          Base,
+          (req: Request, ctx: Ctx) => Promise<Response>
+        >
+      >
     >
-  ): Produced<Base & Omit<Ctx, Key>, In & Omit<Ctx, Key>>
+  ): Produced<Base & Omit<Ctx, Key>, In & Omit<Ctx, Key>, Key, Before>
   // Config-only call — `mw(config)` (or `mw()` for config-less) returns an
   // Entry for use in a `pipeline` array. Falls through from the handler overload
   // because config-only calls either have the wrong arity (required-config mw)
@@ -447,5 +535,5 @@ export interface Middleware<
   // leaves a mapped type `Contributions` cannot infer through, collapsing every
   // composite part's contributions to the constraint. Concrete instantiations
   // are unaffected, so the shorthand is safe at call sites.
-  (...args: ConfigArgs<Config>): Entry<{ [K in Key]: Contribution }, In>
+  (...args: ConfigArgs<Config>): Entry<{ [K in Key]: Contribution }, In, Before>
 }

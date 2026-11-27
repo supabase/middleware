@@ -46,6 +46,18 @@ export type Mismatch<Key extends string> =
   `middleware-prereq: key '${Key}' is on the upstream context with an incompatible type`
 
 /**
+ * Sentinel type for a middleware placed inside one that contributes a key it
+ * named in `before`. Both composition paths site it like {@link Conflict}: on
+ * the handler parameter, where TypeScript prints it.
+ *
+ * @category Types
+ */
+export type OutOfOrder<
+  Who extends string,
+  Key extends string,
+> = `middleware-order: '${Who}' must run before anything that contributes '${Key}'`
+
+/**
  * Keys `Need` declares that `Have` carries with a type `Need` does not accept.
  * A key `Have` lacks is not reported here: that is an unmet prerequisite, not a
  * mismatched one. A {@link Widened} `Have` is skipped, as conflict detection
@@ -83,6 +95,10 @@ type AnyFetchHandler = (req: Request, ctx: object) => Promise<Response>
  * contributes a single key and so has a single-entry record; a composite built
  * with {@link defineComposite} carries one entry per part.
  *
+ * `In` is the prerequisites it needs on `ctx`, and `Before` the keys that must
+ * not be on `ctx` yet: those it must run before. An annotation that leaves out a
+ * `Before` the value has is a type error, not a silently dropped rule.
+ *
  * {@link SingleKeyEntry} spells the one-key case without the braces.
  *
  * @remarks
@@ -101,10 +117,12 @@ type AnyFetchHandler = (req: Request, ctx: object) => Promise<Response>
 export interface Entry<
   Contributes extends object,
   In extends object = Record<never, never>,
+  Before extends string = never,
 > {
   (handler: AnyFetchHandler): AnyFetchHandler
   readonly __contributes?: Contributes
   readonly __in?: In
+  readonly __before?: Before
 }
 
 /**
@@ -134,7 +152,8 @@ export type SingleKeyEntry<
   Key extends string,
   In extends object = Record<never, never>,
   Contribution = unknown,
-> = Entry<{ [K in Key]: Contribution }, In>
+  Before extends string = never,
+> = Entry<{ [K in Key]: Contribution }, In, Before>
 
 /**
  * The keys a contributions record puts on `ctx`, or the key itself when a
@@ -145,7 +164,7 @@ export type ContributedKeys<KeyOrContributes> = KeyOrContributes extends string
   : Extract<keyof KeyOrContributes, string>
 
 /** Any entry, for use as a constraint. */
-export type AnyEntry = Entry<object, object>
+export type AnyEntry = Entry<object, object, string>
 
 /**
  * True when a contributions record has a string index signature rather than
