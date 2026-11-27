@@ -118,8 +118,8 @@ describe('withFeatureFlag', () => {
     })
 
     const evaluate = vi.fn(
-      (_req: Request, ctx: object) =>
-        'user' in ctx && (ctx as { user: { id: string } }).user.id === 'tester',
+      (_req: Request, ctx: { user: { id: string } }) =>
+        ctx.user.id === 'tester',
     )
 
     const app = pipeline(
@@ -169,5 +169,98 @@ describe('withFeatureFlag', () => {
     const res = await handler(new Request('http://localhost/'))
     // ctx holds only middleware contributions — no reserved framework key.
     expect(await res.json()).toEqual({ keys: ['featureFlag'] })
+  })
+})
+
+// What `evaluate` declares about `ctx` is a prerequisite of that call, so a
+// stack with nothing to supply it fails to compile in either form.
+describe('withFeatureFlag — evaluate reads the upstream (tsc-verified)', () => {
+  type User = { id: string }
+  const testers = new Set(['tester'])
+  const withUser = defineMiddleware<'user', void, Record<never, never>, User>({
+    key: 'user',
+    run: () => async () => ({ user: { id: 'tester' } }),
+  })
+  const withRegion = defineMiddleware<
+    'region',
+    void,
+    Record<never, never>,
+    string
+  >({
+    key: 'region',
+    run: () => async () => ({ region: 'eu' }),
+  })
+
+  it('pipeline: an annotated evaluate reads an earlier entry', () => {
+    const _app = pipeline(
+      [
+        withUser(),
+        withFeatureFlag({
+          name: 'beta',
+          evaluate: (_req, ctx: { user: User }) => testers.has(ctx.user.id),
+        }),
+      ],
+      async (_req, ctx) =>
+        Response.json({ flag: ctx.featureFlag.name, user: ctx.user.id }),
+    ) satisfies FetchHandler
+    void _app
+  })
+
+  it('pipeline: an annotated evaluate with no provider fails to compile', () => {
+    const _app = pipeline(
+      [
+        withRegion(),
+        withFeatureFlag({
+          name: 'beta',
+          evaluate: (_req, ctx: { user: User }) => testers.has(ctx.user.id),
+        }),
+      ],
+      // @ts-expect-error — middleware-prereq: key 'user' is not yet on the context
+      async (_req, ctx) => Response.json({ flag: ctx.featureFlag.name }),
+    )
+    void _app
+  })
+
+  it('pipeline: an optional key compiles with or without a provider', () => {
+    const evaluate = (_req: Request, ctx: { user?: User }) =>
+      ctx.user !== undefined && testers.has(ctx.user.id)
+    const _with = pipeline(
+      [withUser(), withFeatureFlag({ name: 'beta', evaluate })],
+      async (_req, ctx) => Response.json({ flag: ctx.featureFlag.name }),
+    ) satisfies FetchHandler
+    const _without = pipeline(
+      [withRegion(), withFeatureFlag({ name: 'beta', evaluate })],
+      async (_req, ctx) => Response.json({ flag: ctx.featureFlag.name }),
+    ) satisfies FetchHandler
+    void [_with, _without]
+  })
+
+  it('nested: an annotated evaluate reads an enclosing layer', () => {
+    const _app = withUser(
+      withFeatureFlag(
+        {
+          name: 'beta',
+          evaluate: (_req, ctx: { user: User }) => testers.has(ctx.user.id),
+        },
+        async (_req, ctx) =>
+          Response.json({ flag: ctx.featureFlag.name, user: ctx.user.id }),
+      ),
+    ) satisfies FetchHandler
+    void _app
+  })
+
+  it('nested: an annotated evaluate with no provider fails to compile', () => {
+    const stack = withRegion(
+      withFeatureFlag(
+        {
+          name: 'beta',
+          evaluate: (_req, ctx: { user: User }) => testers.has(ctx.user.id),
+        },
+        async (_req, ctx) => Response.json({ flag: ctx.featureFlag.name }),
+      ),
+    )
+    // @ts-expect-error — nothing in the stack contributes `user`
+    const _entry: FetchHandler = stack
+    void _entry
   })
 })

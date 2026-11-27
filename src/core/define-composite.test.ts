@@ -4,6 +4,7 @@ import { defineComposite } from './define-composite.js'
 import { defineMiddleware } from './define-middleware.js'
 import { pipeline } from './pipeline.js'
 import type {
+  BaseContext,
   Conflict,
   Contributions,
   FetchHandler,
@@ -334,6 +335,40 @@ describe('defineComposite — types (tsc-verified)', () => {
     )
     const res = await handler(new Request('http://localhost/'))
     expect(await res.json()).toEqual({ y: true, x: 1 })
+  })
+
+  it('makes a config callback’s ctx annotation a prerequisite, in both forms', () => {
+    type Picker = (req: Request, ctx: BaseContext) => boolean
+    const withPick = defineMiddleware<
+      'picked',
+      { pick: Picker },
+      Record<never, never>,
+      boolean
+    >({
+      key: 'picked',
+      run: (config) => async (req, ctx) => ({ picked: config.pick(req, ctx) }),
+    })
+    const withPicked = defineComposite({
+      build: (config: { pick: Picker }) =>
+        [withPick(config), passing('extra', 1)()] as const,
+    })
+    const withX = passing('x', 1)
+    const pick = (_req: Request, ctx: { x: number }) => ctx.x > 0
+
+    const _flat = pipeline([withX(), withPicked({ pick })], async (_req, ctx) =>
+      Response.json({ p: ctx.picked, e: ctx.extra }),
+    ) satisfies FetchHandler
+    const _unmet = pipeline(
+      [withPicked({ pick })],
+      // @ts-expect-error — middleware-prereq: key 'x' is not yet on the context
+      async (_req, ctx) => Response.json({ p: ctx.picked }),
+    )
+    const _nested = withX(
+      withPicked({ pick }, async (_req, ctx) =>
+        Response.json({ p: ctx.picked, x: ctx.x }),
+      ),
+    ) satisfies FetchHandler
+    void [_flat, _unmet, _nested]
   })
 })
 

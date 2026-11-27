@@ -4,6 +4,8 @@
  * @packageDocumentation
  */
 
+import type { BaseContext } from './runtime.js'
+
 /**
  * Sentinel type used to surface a key collision with the upstream context as a
  * TypeScript error at the call site. Both composition paths put it in the
@@ -66,11 +68,67 @@ export type Mistyped<Need, Have> =
 /**
  * Config arg is optional exactly when the middleware's Config admits `undefined`.
  * Used by both `defineMiddleware` (to type the config-only overload) and
- * `pipeline` (internally).
+ * `pipeline` (internally). `Arg` is the type the argument is checked against,
+ * when it differs from `Config` (see {@link ConfigReading}).
  */
-export type ConfigArgs<Config> = undefined extends Config
-  ? [config?: Config]
-  : [config: Config]
+export type ConfigArgs<Config, Arg = Config> = undefined extends Config
+  ? [config?: Arg]
+  : [config: Arg]
+
+/** The keys of `T` that are not optional. */
+export type RequiredKeys<T> = {
+  [K in keyof T]-?: Record<never, never> extends Pick<T, K> ? never : K
+}[keyof T]
+
+/**
+ * `Config` with the `ctx` of each config callback widened to `X & Ctx`, where
+ * `X` is its declared type. A config callback is a top-level function property
+ * whose first parameter takes the `Request` and whose second is declared as the
+ * upstream context: it accepts `In & BaseContext` and names no key beyond `In`.
+ *
+ * The call signatures of {@link Middleware} and {@link Composite} check `config`
+ * against it, so what a callback's `ctx` annotation declares becomes part of
+ * that call's prerequisites. A `Config` with no config callback is returned
+ * as is, so an error about it names the author's type.
+ */
+export type ConfigReading<Config, In, Ctx> = Config extends unknown
+  ? [ConfigCallbacks<Config, In>] extends [never]
+    ? Config
+    : {
+        [P in keyof Config]: P extends ConfigCallbacks<Config, In>
+          ? WithCtx<Config[P], Ctx>
+          : Config[P]
+      }
+  : never
+
+type ConfigCallbacks<Config, In> = {
+  [P in keyof Config]-?: ReadsUpstream<
+    Exclude<Config[P], undefined>,
+    In
+  > extends true
+    ? P
+    : never
+}[keyof Config]
+
+type ReadsUpstream<F, In> = F extends (...args: infer A) => unknown
+  ? A extends [infer R, infer X, ...unknown[]]
+    ? [Request] extends [R]
+      ? [In & BaseContext] extends [X]
+        ? [Exclude<keyof X, keyof In>] extends [never]
+          ? true
+          : false
+        : false
+      : false
+    : false
+  : false
+
+type WithCtx<F, Ctx> = F extends (
+  req: infer R,
+  ctx: infer X,
+  ...rest: infer Rest
+) => infer O
+  ? (req: R, ctx: X & Ctx, ...rest: Rest) => O
+  : F
 
 type AnyFetchHandler = (req: Request, ctx: object) => Promise<Response>
 

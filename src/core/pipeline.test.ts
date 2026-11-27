@@ -218,6 +218,30 @@ describe('type guarantees (tsc-verified)', () => {
     void _bad
   })
 
+  it('prerequisite: an optional key is never unmet, but its type is still checked', () => {
+    const withMaybeAuth = defineMiddleware<
+      'profile',
+      void,
+      { auth?: { userId: string } },
+      { displayName: string }
+    >({
+      key: 'profile',
+      run: () => async () => ({ profile: { displayName: 'x' } }),
+    })
+
+    const _ok = pipeline([withMaybeAuth()], async (_req, ctx) =>
+      Response.json({ name: ctx.profile.displayName }),
+    ) satisfies FetchHandler
+    void _ok
+
+    const _bad = pipeline(
+      [passing('auth', { userId: 1 })(), withMaybeAuth()],
+      // @ts-expect-error — middleware-prereq: key 'auth' is on the upstream context with an incompatible type
+      async () => Response.json({ ok: true }),
+    )
+    void _bad
+  })
+
   it('does not let a host-supplied env (arg 2) leak into ctx', async () => {
     const withA = passing('a', { v: 1 })
     const handler = pipeline([withA()], async (_req, ctx) =>

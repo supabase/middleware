@@ -20,7 +20,15 @@
 import type { NoConflict } from './define-middleware.js'
 import { isContext } from './runtime.js'
 import type { BaseContext } from './runtime.js'
-import type { AnyEntry, ConfigArgs, Entry } from './types.js'
+import type {
+  AnyEntry,
+  ConfigArgs,
+  ConfigReading,
+  Entry,
+  Mismatch,
+  Mistyped,
+  RequiredKeys,
+} from './types.js'
 
 type AnyHandler = (req: Request, ctx: object) => Promise<Response>
 
@@ -67,9 +75,9 @@ type Produced<Base, In> = keyof In extends never
   ? (req: Request, ctx?: Base) => Promise<Response>
   : (req: Request, ctx: Base) => Promise<Response>
 
-type CompositeArgs<Config, Handler> = undefined extends Config
-  ? [handler: Handler] | [config: Config, handler: Handler]
-  : [config: Config, handler: Handler]
+type CompositeArgs<Config, Handler, Arg = Config> = undefined extends Config
+  ? [handler: Handler] | [config: Arg, handler: Handler]
+  : [config: Arg, handler: Handler]
 
 /**
  * The shape of a composite produced by {@link defineComposite}.
@@ -89,7 +97,8 @@ export interface Composite<
   // Handler call, cascade form. `Base` flows inward from the contextual return
   // type; `NoInfer` keeps the handler argument a dead inference site so the
   // push chains through any nesting depth. See `Middleware` for the full
-  // reasoning — this is the record-valued twin of that overload.
+  // reasoning — this is the record-valued twin of that overload, config
+  // callbacks included.
   <Base extends In & BaseContext>(
     ...args: CompositeArgs<
       Config,
@@ -97,17 +106,22 @@ export interface Composite<
         Contributes,
         Base,
         (req: Request, ctx: NoInfer<Base> & Contributes) => Promise<Response>
-      >
+      >,
+      ConfigReading<Config, In, NoInfer<Base>>
     >
   ): Produced<Base, In>
   // Handler call, propagation form. `Ctx` is read outward off the wrapped
-  // handler and republished minus everything this composite contributes.
+  // handler, and `Need` off config callbacks' `ctx` annotations, and both are
+  // republished minus everything this composite contributes.
   // `Partial<Contributes>` is the record analogue of the single-key
   // `{ [K in Key]?: Contribution }` constraint that keeps `Omit` honest: a
   // requirement whose type disagrees with what we contribute is not discharged.
   <
     Base extends In & BaseContext,
-    Ctx extends BaseContext & Partial<Contributes> = BaseContext,
+    Need extends BaseContext = BaseContext,
+    Ctx extends BaseContext & Partial<Contributes> = BaseContext &
+      NoInfer<Need> &
+      Contributes,
   >(
     ...args: CompositeArgs<
       Config,
@@ -115,14 +129,22 @@ export interface Composite<
         Contributes,
         Base,
         (req: Request, ctx: Ctx) => Promise<Response>
-      >
+      >,
+      [Mistyped<Need, Base>] extends [never]
+        ? ConfigReading<Config, In, Need>
+        : Mismatch<Mistyped<Need, Base>>
     >
   ): Produced<
-    Base & Omit<Ctx, keyof Contributes>,
-    In & Omit<Ctx, keyof Contributes>
+    Base & Omit<Ctx, keyof Contributes | keyof Need> & NoInfer<Need>,
+    In &
+      Omit<Ctx, keyof Contributes | keyof Need> &
+      NoInfer<Pick<Need, RequiredKeys<Need>>>
   >
-  // Config-only call — returns the Entry for a `pipeline` array.
-  (...args: ConfigArgs<Config>): Entry<Contributes, In>
+  // Config-only call — returns the Entry for a `pipeline` array. A config
+  // callback's `ctx` annotation joins its `In`.
+  <Need extends BaseContext = BaseContext>(
+    ...args: ConfigArgs<Config, ConfigReading<Config, In, Need>>
+  ): Entry<Contributes, In & NoInfer<Need>>
 }
 
 /**
