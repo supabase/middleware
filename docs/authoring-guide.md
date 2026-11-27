@@ -1169,6 +1169,118 @@ the field on the producer's contribution type and confirm `readUpstreamUser`'s
 callers fail to compile. If they still compile, the shape was written by hand
 somewhere and the contract is not real.
 
+## Variant: running before another middleware
+
+Some middleware answer requests that an inner layer would refuse. A health
+check, or OAuth discovery, has to answer before an auth gate turns the request
+away with a `401`. Behind the gate it never sees those requests, and nothing
+fails until a client does. `before` names the keys that must not be on `ctx`
+yet when your middleware runs, which puts it outside anything that contributes
+them:
+
+```ts
+// src/with-health-check.ts
+import { defineMiddleware } from '@supabase/middleware'
+
+/** Per-instance configuration for {@link withHealthCheck}. */
+export interface WithHealthCheckConfig {
+  /** Path suffix the check answers on. Defaults to `/health`. */
+  path?: string
+}
+
+/** Shape contributed at `ctx.healthCheck`. */
+export interface HealthCheckContribution {
+  /** The path suffix this middleware answers, for links in responses. */
+  path: string
+}
+
+/**
+ * Answers `GET {path}` with `200` before any auth gate runs, so a load
+ * balancer can probe the endpoint without credentials.
+ *
+ * Must run before anything that contributes `authMode`, the key an auth gate
+ * such as `withSupabase` puts on `ctx`.
+ */
+export const withHealthCheck = defineMiddleware({
+  key: 'healthCheck',
+  before: ['authMode'],
+  run: (config: WithHealthCheckConfig | undefined) => async (req) => {
+    const path = config?.path ?? '/health'
+    if (req.method === 'GET' && new URL(req.url).pathname.endsWith(path)) {
+      return new Response('ok')
+    }
+    const healthCheck: HealthCheckContribution = { path }
+    return { healthCheck }
+  },
+})
+```
+
+`before` names a key, not a middleware, so the two packages never import each
+other: whatever contributes `authMode` is covered. The keys are inferred. With
+explicit type arguments, pass them as the fifth, `Before`, and keep it in any
+`Middleware<…>` or `Entry` annotation of the value. An annotation without it
+is a type error rather than a dropped rule.
+
+The engine checks the order in two places:
+
+- **At compile time.** In a `pipeline`, an entry placed after one that
+  contributes a named key fails with
+  `middleware-order: 'healthCheck' must run before anything that contributes 'authMode'`,
+  at any distance, and against the enclosing context when the `pipeline` is a
+  handler argument. Nesting fails wherever a collision would: at any depth once
+  the outermost call is anchored with `satisfies FetchHandler`. Directly
+  inside a middleware with a hand-written signature that contributes the key,
+  such as `withSupabase`, it fails without an anchor too, because the produced
+  handler's `ctx` marks the key as one it must not receive.
+- **When the stack is built.** Each layer passes the `before` rules of what it
+  wraps outward, and the layer that contributes a named key throws with the
+  same message. This holds at any distance, in either form and across the two,
+  for callers with no types at all.
+
+```ts
+// Compiles, and runs the check first.
+pipeline([withHealthCheck(), withSupabase({ auth: 'user' })], handler)
+
+// Fails to compile, and throws at startup if the types are bypassed.
+pipeline(
+  [withSupabase({ auth: 'user' }), withRequestId(), withHealthCheck()],
+  handler,
+)
+```
+
+The rule cannot see configuration. A gate configured to let unauthenticated
+requests through still contributes `authMode`, so the order is refused there
+too. Outermost is correct in every configuration; the rule only rejects an
+order that happens to work in some.
+
+A composite's `before` is every key its parts name, since all of its parts run
+wherever it is placed. A middleware with a
+[hand-written signature](#variant-a-hand-written-signature) carries `before` by
+wrapping each handler parameter in `InOrder<Key, Before, Base, …>` inside
+`NoConflict`, and returning `SingleKeyEntry<Key, In, Contribution, Before>` from
+its config-only form.
+
+Test both halves. Add the wrong order to `negative.ts`, and assert the throw at
+runtime with the types bypassed, the way a JavaScript caller would build it:
+
+```ts
+// A middleware that must run first, placed after the key it names.
+// @expect-error TS2345 middleware-order
+pipeline([withAuthMode(), withHealthCheck()], async () => new Response())
+```
+
+```ts
+it('refuses a stack with an auth gate outside it', () => {
+  const build = pipeline as (...args: unknown[]) => unknown
+  expect(() => build([withAuthMode(), withHealthCheck()], handler)).toThrow(
+    "middleware-order: 'healthCheck' must run before anything that contributes 'authMode'",
+  )
+})
+```
+
+`withAuthMode` here is any middleware in your tests that contributes
+`authMode`.
+
 ## Variant: a config callback that reads upstream context
 
 Some middleware take a **callback** in their configuration rather than only
