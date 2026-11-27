@@ -20,7 +20,14 @@
 
 import type { IsAny } from './define-middleware.js'
 import type { BaseContext, FetchHandler } from './runtime.js'
-import type { AnyEntry, Conflict, Entry, Widened } from './types.js'
+import type {
+  AnyEntry,
+  Conflict,
+  Entry,
+  Mismatch,
+  Mistyped,
+  Widened,
+} from './types.js'
 
 type AnyHandler = (req: Request, ctx: object) => Promise<Response>
 
@@ -52,9 +59,10 @@ type Unmet<In, Ctx> = Extract<Exclude<keyof In, keyof Ctx>, string>
 
 /**
  * Validate a tuple of entries in order against a seed context. Each entry's
- * prerequisites (`In`) must be present on the context accumulated so far, and
- * its key must not already be there. Resolves to `true` when the whole chain
- * is valid, or to a descriptive error-string type naming the offending key.
+ * prerequisites (`In`) must be present on the context accumulated so far, with
+ * types they accept, and its key must not already be there. Resolves to `true`
+ * when the whole chain is valid, or to a descriptive error-string type naming
+ * the offending key.
  *
  * {@link pipeline} applies it seeded with {@link BaseContext}. A composing
  * wrapper that puts its own keys on the context before the entries run should
@@ -81,7 +89,9 @@ export type ValidateEntries<
     ? ValidateEntries<Rest, Ctx & C>
     : [Duplicated<C, Ctx>] extends [never]
       ? [Unmet<In, Ctx>] extends [never]
-        ? ValidateEntries<Rest, Ctx & C>
+        ? [Mistyped<In, Ctx>] extends [never]
+          ? ValidateEntries<Rest, Ctx & C>
+          : Mismatch<Mistyped<In, Ctx>>
         : `middleware-prereq: key '${Unmet<In, Ctx>}' is not yet on the context (check ordering)`
       : Conflict<Duplicated<C, Ctx>>
   : true

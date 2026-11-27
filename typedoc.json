@@ -40,6 +40,8 @@
     "MiddlewareArgs",
     "ConfigArgs",
     "AnyEntry",
-    "Accumulate"
+    "Accumulate",
+    "Mistyped",
+    "Mismatch"
   ]
 }

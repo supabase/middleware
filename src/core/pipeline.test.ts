@@ -188,6 +188,26 @@ describe('type guarantees (tsc-verified)', () => {
     void _bad
   })
 
+  it('prerequisite: an earlier entry with the key at the wrong type fails to compile', () => {
+    const withNeedsAuth = defineMiddleware<
+      'profile',
+      void,
+      { auth: { userId: string } },
+      { displayName: string }
+    >({
+      key: 'profile',
+      run: () => async () => ({ profile: { displayName: 'x' } }),
+    })
+    const withNumericAuth = passing('auth', { userId: 1 })
+
+    const _bad = pipeline(
+      [withNumericAuth(), withNeedsAuth()],
+      // @ts-expect-error — middleware-prereq: key 'auth' is on the upstream context with an incompatible type
+      async () => Response.json({ ok: true }),
+    )
+    void _bad
+  })
+
   it('does not let a host-supplied env (arg 2) leak into ctx', async () => {
     const withA = passing('a', { v: 1 })
     const handler = pipeline([withA()], async (_req, ctx) =>
@@ -218,6 +238,15 @@ describe('ValidateEntries (exported, tsc-verified)', () => {
     // @ts-expect-error — prereq 'auth' is not on the default BaseContext seed
     const _bad: ValidateEntries<[NeedsAuthEntry]> = true
     void _bad
+  })
+
+  it('reports a mismatch when the seed carries the prerequisite at another type', () => {
+    const _msg: ValidateEntries<
+      [NeedsAuthEntry],
+      { auth: { userId: number } }
+    > =
+      "middleware-prereq: key 'auth' is on the upstream context with an incompatible type"
+    void _msg
   })
 
   it('reports a conflict when the seed already carries the entry key', () => {
