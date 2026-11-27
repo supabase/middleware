@@ -335,6 +335,30 @@ describe('defineComposite — types (tsc-verified)', () => {
     const res = await handler(new Request('http://localhost/'))
     expect(await res.json()).toEqual({ y: true, x: 1 })
   })
+
+  it('in a host-typed export, starts from the empty upstream', () => {
+    // A Workers `ExportedHandler<Env>`: the env is a platform value, and a part
+    // whose key is named like a binding does not collide with it.
+    type Host = {
+      fetch?: (
+        req: Request,
+        env: { authMode: string; SECRET: string },
+      ) => Response | Promise<Response>
+    }
+    const withC = passing('c', 3)
+    const _app = {
+      fetch: withAuth(
+        { mode: 'none' },
+        withC(async (_req, ctx) => {
+          const v: [string, number] = [ctx.authMode, ctx.c]
+          // @ts-expect-error — the env's bindings are not on `ctx`
+          void ctx.SECRET
+          return Response.json(v)
+        }),
+      ),
+    } satisfies Host
+    void _app
+  })
 })
 
 describe('defineComposite — gate behavior', () => {

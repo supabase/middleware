@@ -17,7 +17,7 @@
  * @packageDocumentation
  */
 
-import type { NoConflict } from './define-middleware.js'
+import type { HostArgs, HostProduced, NoConflict } from './define-middleware.js'
 import { isContext } from './runtime.js'
 import type { BaseContext } from './runtime.js'
 import type { AnyEntry, ConfigArgs, Entry } from './types.js'
@@ -74,7 +74,7 @@ type CompositeArgs<Config, Handler> = undefined extends Config
 /**
  * The shape of a composite produced by {@link defineComposite}.
  *
- * The same three call signatures as {@link Middleware}, so a composite is
+ * The same call signatures as {@link Middleware}, so a composite is
  * usable everywhere a middleware is — nested (`wsup(config, handler)`) or flat
  * (`pipeline([wsup(config)], handler)`) — from one declaration. The only
  * difference is that `Contributes` is a record rather than a single key.
@@ -86,6 +86,25 @@ export interface Composite<
   Config,
   In extends object,
 > {
+  // Handler call, host form: in a position typed by a host's `fetch`, the
+  // upstream is the empty context, not the host's parameter. First, so it is
+  // chosen there before the cascade; see `Middleware` for the full reasoning.
+  <Out = never>(
+    ...args: HostArgs<
+      Out,
+      CompositeArgs<
+        Config,
+        NoConflict<
+          Contributes,
+          In & BaseContext,
+          (
+            req: Request,
+            ctx: In & BaseContext & Contributes,
+          ) => Promise<Response>
+        >
+      >
+    >
+  ): HostProduced<In, Out>
   // Handler call, cascade form. `Base` flows inward from the contextual return
   // type; `NoInfer` keeps the handler argument a dead inference site so the
   // push chains through any nesting depth. See `Middleware` for the full
