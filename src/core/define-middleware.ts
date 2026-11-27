@@ -367,14 +367,23 @@ export type InOrder<
 /**
  * A produced handler's `ctx`: `Base`, with each `before` key typed as an
  * optional {@link OutOfOrder} sentinel. An enclosing layer whose handler type
- * passes one of those keys then rejects this handler. That catches a layer
+ * passes one of those keys then rejects this handler, which catches a layer
  * whose keys the inner call's `Base` doesn't carry, such as `withSupabase`.
  */
 export type Absent<Who extends string, Before extends string, Base> = [
   Before,
 ] extends [never]
   ? Base
-  : Base & { readonly [K in Before]?: OutOfOrder<Who, K> }
+  : Base & { readonly [K in Before]?: OutOfOrder<Who, K> } & AnyKeys
+
+/**
+ * Keeps every other key known, so an object literal passed by a host or a test
+ * (`handler(req, { DB: '…' })`) meets no excess-property check, as it doesn't
+ * against `object`. An `unknown` index signature would reject an interface
+ * such as Deno's `ServeHandlerInfo`; `any` is the one any object type meets.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyKeys = { readonly [key: string]: any }
 
 /**
  * The produced handler shape.

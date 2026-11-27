@@ -1233,6 +1233,19 @@ describe('before', () => {
     }
   })
 
+  it('types: a host argument is accepted as an object literal or an interface', async () => {
+    interface ServeInfo {
+      remoteAddr: { hostname: string }
+    }
+    const info: ServeInfo = { remoteAddr: { hostname: 'localhost' } }
+    const app = withDiscovery(withGate(innerOk))
+    const literal = await app(new Request('http://localhost/'), {
+      DB_URL: 'postgres://',
+    })
+    const served = await app(new Request('http://localhost/'), info)
+    expect([literal.status, served.status]).toEqual([200, 200])
+  })
+
   it('a generator middleware with explicit type arguments passes `Before` too', async () => {
     const withTimed = defineMiddleware<
       'timed',
@@ -1291,7 +1304,9 @@ describe('before', () => {
     ).toThrow(outOfOrder)
   })
 
-  it('types: a wrong order fails to compile under a hand-written signature that contributes the key', () => {
+  // Further in, a hand-written outer is caught by types only for some shapes
+  // before TypeScript 5.9; the build-time test above covers every distance.
+  it('types: a wrong order fails to compile directly inside a hand-written signature that contributes the key', () => {
     expect(() =>
       withHandWrittenGate(
         { label: 'x' },
@@ -1302,11 +1317,8 @@ describe('before', () => {
     expect(() =>
       withHandWrittenGate(
         { label: 'x' },
-        // TypeScript 5.9 reports the sentinel on `withDiscovery`'s call; before
-        // 5.9 the hand-written `Base` is unresolved there, and the produced ctx
-        // fails on `withA`'s.
-        // @ts-expect-error — middleware-order: 'discovery' must run before anything that contributes 'gate'
-        withA(withDiscovery(async (_r, c) => Response.json(c.discovery))),
+        // @ts-expect-error — the produced ctx marks 'gate' with the middleware-order sentinel
+        withDiscovery(async (_r, c) => Response.json(c.discovery)),
       ),
     ).toThrow(outOfOrder)
   })
