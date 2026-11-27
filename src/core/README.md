@@ -116,6 +116,12 @@ inward `Base` cascade when nesting. The `satisfies FetchHandler` below is
 therefore an assertion that the stack can be the `fetch` export, not a
 requirement for `ctx` to type.
 
+The forms mix, and there the anchor does carry weight: a `pipeline` in a
+middleware's handler argument sees the keys around it once the outermost call
+is anchored, and starts from the empty upstream without one. (A middleware with
+a hand-written type signature, such as `withSupabase`, doesn't pass its keys to
+a `pipeline` in its handler argument either way; list it in the array instead.)
+
 ```ts
 import { pipeline } from '@supabase/middleware'
 import type { FetchHandler } from '@supabase/middleware'
@@ -140,7 +146,7 @@ export default {
 
 | Export                                      | Description                                                                                                                                                                                                                                                 |
 | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pipeline(entries, handler)`                | Compose a flat array of entries around a handler. Returns a `FetchHandler`.                                                                                                                                                                                 |
+| `pipeline(entries, handler)`                | Compose a flat array of entries around a handler. Returns the outermost handler: a `FetchHandler` at the top level, and in a handler position, one that takes the context it is placed in.                                                                  |
 | `Entry<Contributes, In>`                    | Type produced by `mw(config)`. Carries a key-to-type record of contributions as a phantom, for `pipeline`'s accumulation. `SingleKeyEntry<Key, In, Contribution>` is the one-key shorthand.                                                                 |
 | `defineMiddleware(spec)`                    | Author helper: declare a middleware. Returns a `(config, handler)` callable.                                                                                                                                                                                |
 | `FetchHandler`                              | The type of a stack handed to the host (the `fetch` export, `Deno.serve(app)`, …). Required for collision detection in nested handlers; also rejects a stack whose `In` prerequisite nobody supplied. Prerequisites between layers are enforced without it. |
