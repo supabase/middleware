@@ -50,7 +50,7 @@ ctx.featureFlag.payload // anything you returned
 
 ## Targeting the verified caller
 
-`evaluate` receives the context accumulated by the entries placed before it. A flag composed after an auth middleware can read the caller that middleware verified, with no second lookup of its own.
+`evaluate` receives the context accumulated by the entries placed before it. A flag composed after an auth middleware can read the caller that middleware verified, with no second lookup of its own. Annotate the keys it reads:
 
 ```ts
 pipeline(
@@ -58,17 +58,21 @@ pipeline(
     withUser(),
     withFeatureFlag({
       name: 'beta-checkout',
-      evaluate: (_req, ctx) => {
-        const { user } = ctx as { user?: { id: string } }
-        return user !== undefined && betaTesters.has(user.id)
-      },
+      evaluate: (_req, ctx: { user: { id: string } }) =>
+        betaTesters.has(ctx.user.id),
     }),
   ],
   handler,
 )
 ```
 
-`ctx` is typed as `BaseContext` (`object`), because this middleware declares no prerequisites and composes at any position in a stack. Narrow it to the shape of the entries you place before it. Standalone, `ctx` is empty.
+The annotation is a prerequisite of that call, checked like any other. Without `withUser` before the flag, the stack fails to compile:
+
+```
+middleware-prereq: key 'user' is not yet on the context (check ordering)
+```
+
+Nesting checks it too: `withUser(withFeatureFlag(config, handler))` compiles, and the same flag with no `withUser` around it fails where the stack is checked against `FetchHandler`. When the flag also works without the key, mark it optional (`ctx: { user?: { id: string } }`) and handle its absence. Unannotated, `ctx` is `BaseContext` (`object`), or the enclosing context when the flag is nested in an anchored stack.
 
 ## Why 404 by default
 
