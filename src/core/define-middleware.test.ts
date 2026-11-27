@@ -2,8 +2,9 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { withCors } from '../middleware/cors/with-cors.js'
 import { withFeatureFlag } from '../middleware/feature-flag/with-feature-flag.js'
+import { defineComposite } from './define-composite.js'
 import { defineMiddleware } from './define-middleware.js'
-import type { NoConflict } from './define-middleware.js'
+import type { Middleware, NoConflict } from './define-middleware.js'
 import { pipeline } from './pipeline.js'
 import type { BaseContext, FetchHandler } from './runtime.js'
 import { getEnv, seedContext } from './runtime.js'
@@ -1116,5 +1117,136 @@ describe('a middleware with a hand-written signature (tsc-verified)', () => {
       }),
     )
     void _app
+  })
+})
+
+// ---------------------------------------------------------------------------
+// A factory that takes the consumer's type and returns the engine's own types,
+// as the authoring guide's "Variant: a contribution typed by the consumer"
+// does. The type is fixed before the middleware exists, so every check the
+// engine makes applies to it, at the TypeScript floor too (`typecheck:min`).
+// ---------------------------------------------------------------------------
+describe('a factory for a contribution typed by the consumer (tsc-verified)', () => {
+  interface StoreConfig {
+    url: string
+  }
+  interface Store<Schema> {
+    get<K extends keyof Schema & string>(key: K): Schema[K] | undefined
+  }
+
+  function createWithStore<Schema>(): Middleware<
+    'store',
+    StoreConfig,
+    Record<never, never>,
+    Store<Schema>
+  > {
+    return defineMiddleware<
+      'store',
+      StoreConfig,
+      Record<never, never>,
+      Store<Schema>
+    >({
+      key: 'store',
+      run: () => async () => ({ store: { get: () => undefined } }),
+    })
+  }
+  function createWithStoreAdmin<Schema>(): Middleware<
+    'storeAdmin',
+    StoreConfig,
+    Record<never, never>,
+    Store<Schema>
+  > {
+    return defineMiddleware<
+      'storeAdmin',
+      StoreConfig,
+      Record<never, never>,
+      Store<Schema>
+    >({
+      key: 'storeAdmin',
+      run: () => async () => ({ storeAdmin: { get: () => undefined } }),
+    })
+  }
+  function createWithStores<Schema>() {
+    const withStore = createWithStore<Schema>()
+    const withStoreAdmin = createWithStoreAdmin<Schema>()
+    return defineComposite({
+      build: (config: StoreConfig) =>
+        [withStore(config), withStoreAdmin(config)] as const,
+    })
+  }
+
+  interface Schema {
+    visits: number
+  }
+  const config = { url: 'https://store.example.com' }
+  const withStore = createWithStore<Schema>()
+  const withStores = createWithStores<Schema>()
+  const withB = passing('beta', { v: 2 })
+
+  it('one key: the consumer’s type reaches ctx, nested and flat', () => {
+    const _nested = withB(
+      withStore(config, async (_req, ctx) => {
+        const visits: number | undefined = ctx.store.get('visits')
+        const b: number = ctx.beta.v
+        return Response.json({ visits, b })
+      }),
+    ) satisfies FetchHandler
+    const _flat = pipeline([withB(), withStore(config)], async (_req, ctx) => {
+      const visits: number | undefined = ctx.store.get('visits')
+      // @ts-expect-error — 'nope' is not a key of the consumer's `Schema`
+      ctx.store.get('nope')
+      return Response.json({ visits, b: ctx.beta.v })
+    })
+    void _nested
+    void _flat
+  })
+
+  it('several keys: a composite of typed parts, nested and flat', () => {
+    const _nested = withStores(config, async (_req, ctx) => {
+      const visits: number | undefined = ctx.store.get('visits')
+      const admin: number | undefined = ctx.storeAdmin.get('visits')
+      return Response.json({ visits, admin })
+    }) satisfies FetchHandler
+    const _flat = pipeline([withStores(config), withB()], async (_req, ctx) => {
+      const visits: number | undefined = ctx.store.get('visits')
+      const admin: number | undefined = ctx.storeAdmin.get('visits')
+      return Response.json({ visits, admin, b: ctx.beta.v })
+    })
+    void _nested
+    void _flat
+  })
+
+  it('anchored: a pipeline in the composite’s handler argument sees its keys', () => {
+    const _app = withStores(
+      config,
+      pipeline([withB()], async (_req, ctx) => {
+        const visits: number | undefined = ctx.store.get('visits')
+        const admin: number | undefined = ctx.storeAdmin.get('visits')
+        return Response.json({ visits, admin, b: ctx.beta.v })
+      }),
+    ) satisfies FetchHandler
+    void _app
+  })
+
+  it('collision: a key the composite contributes, flat, nested and across a pipeline', () => {
+    const _flat = pipeline(
+      [withStores(config), withStore(config)],
+      // @ts-expect-error — middleware-conflict: key 'store' is already present on the upstream context
+      innerOk,
+    )
+    const _nested =
+      // @ts-expect-error — the inner `withStore` shadows 'store' from the composite
+      withStores(config, withStore(config, innerOk)) satisfies FetchHandler
+    const _across = withStores(
+      config,
+      pipeline(
+        [withStore(config)],
+        // @ts-expect-error — middleware-conflict: key 'store' is already present on the upstream context
+        innerOk,
+      ),
+    ) satisfies FetchHandler
+    void _flat
+    void _nested
+    void _across
   })
 })

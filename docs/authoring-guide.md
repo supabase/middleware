@@ -1310,8 +1310,7 @@ callback that does not read upstream context needs no annotation in either form.
 `Middleware<Key, Config, In, Contribution>` has four type parameters. A
 middleware that needs one more writes its own signature. The case above is the
 usual one: a config callback that reads the accumulated upstream needs `Base`
-in scope where `config` is checked. A `Payload` parameter for a parsed body is
-another.
+in scope where `config` is checked.
 
 The split is the same every time. The runtime is an ordinary `defineMiddleware`
 call, with the extra parameter erased to its constraint, so it keeps context
@@ -1325,6 +1324,12 @@ One thing the engine's own types give that a hand-written signature does not: a
 `withRequestLog({ log }, pipeline([…], handler))` types the pipeline's handler
 without `ctx.requestLog`. Consumers who need both list `withRequestLog` in the
 `pipeline` array instead.
+
+So write one only for a parameter known where the middleware is placed and no
+sooner, as `Base` is. A type the consumer chooses for your contribution, such
+as the schema of a typed client, is known before that:
+[a factory](#variant-a-contribution-typed-by-the-consumer) takes it and returns
+the engine's own types, with every check they make.
 
 The runtime:
 
@@ -1932,6 +1937,334 @@ There is none to speak of. The parts fold exactly as `pipeline` folds them, each
 merging its own single key. A part that short-circuits does so from _inside_ the
 fold, which means an enclosing middleware's response seam observes it — the same
 as any other nested stack.
+
+## Variant: a contribution typed by the consumer
+
+Some middleware put something on `ctx` whose type the consumer chooses: a
+database client typed by their schema, or flags typed by the flags they
+declare. `Middleware<Key, Config, In, Contribution>` fixes `Contribution` where
+the middleware is defined, and a middleware takes no type argument when it is
+called. So the type parameter goes on a function that returns the middleware.
+The consumer calls that factory once, with their type, and gets back an
+ordinary `Middleware`, or a `Composite` when the type reaches several keys. It
+is the same idea as supabase-js's `createClient<Database>()`.
+
+Use it whenever the consumer's type decides the type of what you contribute.
+The factory returns the engine's own types, so everything this guide says about
+a middleware holds for what it makes: `ctx` accumulates in both forms, a
+duplicate key fails to compile, and a `pipeline` written as its handler
+argument sees its keys once the stack is anchored. That last one is what a
+[hand-written signature](#variant-a-hand-written-signature) can't give, so
+write one of those only for a type known where the middleware is placed and no
+sooner, such as the upstream a config callback reads.
+
+The type can also come from a value rather than a type argument: a factory that
+takes the consumer's flags object infers their type from it.
+
+### One key
+
+The example is a key-value store client, typed by the consumer's `Schema`, an
+object type that maps each key in the store to the type of its value. The
+factory's return type is the `Middleware<…>` annotation from §1, with that
+client as the `Contribution`:
+
+```ts
+// src/with-kv.ts
+import { defineMiddleware } from '@supabase/middleware'
+import type { Middleware } from '@supabase/middleware'
+
+/** Per-instance configuration for the middleware {@link createWithKv} makes. */
+export interface WithKvConfig {
+  /** Base URL of the store's HTTP API. */
+  url: string
+}
+
+/**
+ * A key-value client typed by the consumer's `Schema`, which maps each key to
+ * the type of the value stored under it.
+ */
+export interface KvClient<Schema> {
+  /** The value stored under `key`, or `undefined` when there is none. */
+  get<K extends keyof Schema & string>(key: K): Promise<Schema[K] | undefined>
+}
+
+/** Stands in for whatever client your package builds. */
+export function kvClient<Schema>(
+  url: string,
+  authorization: string | null,
+): KvClient<Schema> {
+  return {
+    async get(key) {
+      const res = await fetch(`${url}/${encodeURIComponent(key)}`, {
+        headers: authorization ? { authorization } : {},
+      })
+      // The store returns JSON; `Schema` is the consumer's account of its shape.
+      return res.ok ? ((await res.json()) as Schema[typeof key]) : undefined
+    },
+  }
+}
+
+/**
+ * Make the middleware that contributes a {@link KvClient} for `Schema` at
+ * `ctx.kv`. Call it once, at module scope.
+ */
+export function createWithKv<Schema = Record<string, unknown>>(): Middleware<
+  'kv',
+  WithKvConfig,
+  Record<never, never>,
+  KvClient<Schema>
+> {
+  return defineMiddleware<
+    'kv',
+    WithKvConfig,
+    Record<never, never>,
+    // Contribution — fixed by the consumer's type argument, before the
+    // middleware exists.
+    KvClient<Schema>
+  >({
+    key: 'kv',
+    // Per request, so the client reads as the caller.
+    run: (config) => async (req) => ({
+      kv: kvClient<Schema>(config.url, req.headers.get('authorization')),
+    }),
+  })
+}
+```
+
+The consumer calls the factory once, at module scope, and composes what it
+returns like any other middleware:
+
+```ts
+interface AppSchema {
+  greeting: string
+  visits: number
+}
+
+const withKv = createWithKv<AppSchema>()
+
+export default {
+  fetch: pipeline(
+    [withKv({ url: 'https://kv.example.com' })],
+    async (_req, ctx) => {
+      const visits = await ctx.kv.get('visits') // number | undefined
+      return Response.json({ visits })
+    },
+  ),
+}
+```
+
+The default type argument keeps `createWithKv()` usable without a schema. Its
+client's reads are then `unknown`.
+
+### Several keys
+
+When the consumer's type reaches several keys, give each key its own factory,
+and [bundle](#variant-bundling-middleware-into-one) them with `defineComposite`
+inside a factory that passes the type argument on. The composite's
+contributions are derived from the typed parts, so nothing is declared and
+nothing is cast:
+
+```ts
+// src/with-kv-clients.ts
+import { defineComposite, defineMiddleware, getEnv } from '@supabase/middleware'
+import type { Middleware } from '@supabase/middleware'
+
+import { createWithKv, kvClient } from './with-kv.js'
+import type { KvClient, WithKvConfig } from './with-kv.js'
+
+function requireEnv(name: string): string {
+  const value = getEnv(name)
+  if (!value) throw new Error(`${name} is not set`)
+  return value
+}
+
+/**
+ * Make the middleware that contributes a {@link KvClient} for `Schema` at
+ * `ctx.kvAdmin`. It reads with the service key, not as the caller.
+ */
+export function createWithKvAdmin<
+  Schema = Record<string, unknown>,
+>(): Middleware<
+  'kvAdmin',
+  WithKvConfig,
+  Record<never, never>,
+  KvClient<Schema>
+> {
+  return defineMiddleware<
+    'kvAdmin',
+    WithKvConfig,
+    Record<never, never>,
+    KvClient<Schema>
+  >({
+    key: 'kvAdmin',
+    run: (config) => {
+      let client: KvClient<Schema> | undefined
+      return async () => {
+        // First request: bindings have arrived, so `getEnv` resolves.
+        client ??= kvClient<Schema>(
+          config.url,
+          `Bearer ${requireEnv('KV_SERVICE_KEY')}`,
+        )
+        return { kvAdmin: client }
+      }
+    },
+  })
+}
+
+/**
+ * Make the middleware that contributes both clients for `Schema`, at `ctx.kv`
+ * and `ctx.kvAdmin`. Call it once, at module scope.
+ */
+export function createWithKvClients<Schema = Record<string, unknown>>() {
+  // Each part takes the consumer's type argument, so the composite's
+  // contributions carry it with nothing declared here.
+  const withKv = createWithKv<Schema>()
+  const withKvAdmin = createWithKvAdmin<Schema>()
+  return defineComposite({
+    build: (config: WithKvConfig) =>
+      [withKv(config), withKvAdmin(config)] as const,
+  })
+}
+```
+
+```ts
+const withKvClients = createWithKvClients<AppSchema>()
+
+withKvClients({ url }, handler) // nested
+pipeline([withKvClients({ url }), withValidatedBody({ ... })], handler) // flat
+```
+
+`createWithKvClients` has no return type annotation, which keeps its
+contributions derived. JSR rejects an inferred public type, so a package
+published there writes it out:
+`Composite<{ kv: KvClient<Schema>; kvAdmin: KvClient<Schema> }, WithKvConfig, Record<never, never>>`.
+That is an annotation, not a cast: the compiler still rejects a key or a type
+the parts don't produce.
+
+### Adding a factory to a published middleware
+
+A middleware already published with a hand-written generic signature for this,
+called as `withKv<AppSchema>(config, handler)`, gets the factory **alongside**
+that export. Don't retype the export as the factory's result
+(`export const withKv = createWithKv()`). That breaks every caller who passes
+the type argument explicitly, because the first type parameter of the engine's
+handler signatures is `Base`, the upstream context, and the argument binds to
+it:
+
+- `withKv<AppSchema>(config, handler)` can still compile, with `ctx` typed
+  `AppSchema & { kv: KvClient<Record<string, unknown>> }`. The client has lost
+  the schema.
+- `withKv<AppSchema>(config)`, the `pipeline` entry, fails with
+  `Expected 2 arguments, but got 1`. The config-only signature takes no type
+  parameter, so only the handler signatures match.
+
+Keep the export's signature, mark its explicit-type form `@deprecated` with a
+pointer to the factory, and retype the export at your next major.
+
+### Type tests
+
+Add these cases to the files from §3. `positive.ts` needs:
+
+```ts
+import { createWithKv } from '../src/with-kv.js'
+import { createWithKvClients } from '../src/with-kv-clients.js'
+
+interface AppSchema {
+  greeting: string
+  visits: number
+}
+
+const withKv = createWithKv<AppSchema>()
+const withKvClients = createWithKvClients<AppSchema>()
+const url = 'https://kv.example.com'
+
+// P8 — one key, flat: the consumer's type reaches `ctx.kv`.
+pipeline([withKv({ url })], async (_req, ctx) => {
+  const visits: number | undefined = await ctx.kv.get('visits')
+  return Response.json({ visits })
+}) satisfies FetchHandler
+
+// P9 — one key, nested under an upstream layer: `ctx` carries both keys.
+withValidatedBody(
+  { validate: () => true },
+  withKv({ url }, async (_req, ctx) => {
+    const greeting: string | undefined = await ctx.kv.get('greeting')
+    return Response.json({ greeting, data: ctx.validatedBody.data })
+  }),
+) satisfies FetchHandler
+
+// P10 — several keys, flat and nested: the composite's keys come from its
+// typed parts.
+pipeline([withKvClients({ url })], async (_req, ctx) => {
+  const visits: number | undefined = await ctx.kv.get('visits')
+  const greeting: string | undefined = await ctx.kvAdmin.get('greeting')
+  return Response.json({ visits, greeting })
+}) satisfies FetchHandler
+
+withKvClients({ url }, async (_req, ctx) => {
+  const visits: number | undefined = await ctx.kv.get('visits')
+  const greeting: string | undefined = await ctx.kvAdmin.get('greeting')
+  return Response.json({ visits, greeting })
+}) satisfies FetchHandler
+
+// P11 — a `pipeline` as the handler argument: in an anchored stack, its
+// handler sees the composite's keys.
+withKvClients(
+  { url },
+  pipeline([withValidatedBody({ validate: () => true })], async (_req, ctx) => {
+    const visits: number | undefined = await ctx.kv.get('visits')
+    return Response.json({ visits, data: ctx.validatedBody.data })
+  }),
+) satisfies FetchHandler
+```
+
+`negative.ts` needs:
+
+```ts
+import { createWithKv } from '../src/with-kv.js'
+import { createWithKvClients } from '../src/with-kv-clients.js'
+
+interface AppSchema {
+  greeting: string
+  visits: number
+}
+
+const withKv = createWithKv<AppSchema>()
+const withKvClients = createWithKvClients<AppSchema>()
+const url = 'https://kv.example.com'
+
+// N8 — `ctx.kv` is typed by the consumer's schema, not `any`.
+// @expect-error TS2345 Argument of type '"nope"' is not assignable to parameter of type '"greeting" | "visits"'
+pipeline([withKv({ url })], async (_req, ctx) =>
+  Response.json(await ctx.kv.get('nope')),
+) satisfies FetchHandler
+
+// N9 — a collision, flat: the composite already contributes `kv`.
+// @expect-error TS2345 middleware-conflict: key 'kv' is already present on the upstream context
+pipeline(
+  [withKvClients({ url }), withKv({ url })],
+  async () => new Response(),
+) satisfies FetchHandler
+
+// N10 — a collision, nested. Two signatures take a handler, so it is TS2769.
+// @expect-error TS2769 middleware-conflict: key 'kv' is already present on the upstream context
+withKvClients(
+  { url },
+  withKv({ url }, async () => new Response()),
+) satisfies FetchHandler
+
+// N11 — a collision inside a `pipeline` as the handler argument: its entries
+// are checked against the composite's keys.
+// @expect-error TS2345 middleware-conflict: key 'kv' is already present on the upstream context
+withKvClients(
+  { url },
+  pipeline([withKv({ url })], async () => new Response()),
+) satisfies FetchHandler
+```
+
+P11 and N11 need the anchor. Without `satisfies FetchHandler` on the outermost
+call, a `pipeline` in a handler argument starts from the empty upstream, as
+[`pipeline`, or nesting](#pipeline-or-nesting) says.
 
 ## Rules
 
